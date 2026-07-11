@@ -17,6 +17,24 @@ export interface GoogleDriveFileMetadata {
 let accessToken: string | null = null;
 let tokenClient: any = null;
 
+const TOKEN_KEY = 'scoretone_google_token';
+const EXPIRES_KEY = 'scoretone_google_token_expires';
+
+// Restore token on startup if it's still valid
+try {
+  const storedToken = localStorage.getItem(TOKEN_KEY);
+  const storedExpires = localStorage.getItem(EXPIRES_KEY);
+  if (storedToken && storedExpires) {
+    const expiresAt = parseInt(storedExpires, 10);
+    // Add 2-minute safety buffer before token expiration
+    if (Date.now() < expiresAt - 120000) {
+      accessToken = storedToken;
+    }
+  }
+} catch (e) {
+  console.warn('[ScoreTone] Failed to restore token from localStorage', e);
+}
+
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 export const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID || '';
 
@@ -71,6 +89,16 @@ export const googleDriveService = {
             return;
           }
           accessToken = response.access_token;
+          
+          // Store token in localStorage with 1-hour expiration
+          try {
+            const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
+            localStorage.setItem(TOKEN_KEY, response.access_token);
+            localStorage.setItem(EXPIRES_KEY, expiresAt.toString());
+          } catch (e) {
+            console.warn('[ScoreTone] Failed to save token to localStorage', e);
+          }
+
           onTokenFetched(response.access_token);
         }
       });
@@ -142,6 +170,10 @@ export const googleDriveService = {
     if (!response.ok) {
       if (response.status === 401) {
         accessToken = null;
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(EXPIRES_KEY);
+        } catch (e) {}
       }
       throw new Error(`Failed to list Drive files: ${response.statusText}`);
     }
@@ -199,6 +231,10 @@ export const googleDriveService = {
     if (!response.ok) {
       if (response.status === 401) {
         accessToken = null;
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(EXPIRES_KEY);
+        } catch (e) {}
       }
       throw new Error(`Failed to download file from Google Drive: ${response.statusText}`);
     }
