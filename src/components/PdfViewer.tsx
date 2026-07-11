@@ -158,10 +158,18 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     );
   };
 
+  const overflowClass = useMemo(() => {
+    if (scrollMode === 'single') {
+      if (zoom > 1.0) return 'overflow-auto';
+      return fitMode === 'height' ? 'overflow-hidden' : 'overflow-auto';
+    }
+    return 'overflow-auto';
+  }, [scrollMode, zoom, fitMode]);
+
   return (
     <div
       ref={containerRef}
-      className="w-full h-full overflow-auto flex flex-col select-none"
+      className={`w-full h-full flex flex-col select-none ${overflowClass}`}
       style={{
         backgroundColor: 'var(--pdf-bg)',
         transition: 'background-color var(--transition-md)'
@@ -173,7 +181,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           style={{
             margin: 'auto', // Centers when page fits, aligns to top-left when zoomed/overflowing so all parts can be scrolled to
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            maxWidth: zoom > 1.0 ? undefined : '100%',
+            maxHeight: (zoom > 1.0 || fitMode === 'width') ? undefined : '100%',
+            boxSizing: 'border-box'
           }}
         >
           <PdfPageCanvas

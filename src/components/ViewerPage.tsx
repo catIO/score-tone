@@ -147,8 +147,19 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Keyboard Navigation & Bluetooth turn pedals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore key events if focused on input elements (like page jump input)
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
       const isLandscape = containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : false;
       const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
+      
+      // If we are zoomed in, let arrow keys scroll the container naturally instead of turning the page
+      if (zoom > 1.0 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        return;
+      }
+
       switch (e.key) {
         case 'ArrowRight': case 'ArrowDown': case 'PageDown': case ' ': case 'Enter':
           e.preventDefault();
@@ -175,7 +186,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset]);
+  }, [currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset, zoom]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
