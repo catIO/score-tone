@@ -198,6 +198,16 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
     const target = e.target as HTMLElement;
+
+    // Click outside sidebars to close them
+    if (isDisplayOpen || isSettingsOpen) {
+      if (!target.closest('.sidebar-control-panel') && !target.closest('.md-top-bar')) {
+        setIsDisplayOpen(false);
+        setIsSettingsOpen(false);
+        return; // Consume click to prevent accidental page turn
+      }
+    }
+
     if (target.closest('.sidebar-control-panel') || target.closest('.md-top-bar') || target.closest('button') || target.closest('input')) return;
 
     const { clientX } = e;
@@ -365,7 +375,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
       {/* Display Controls sidebar */}
       <div
-        className="sidebar-control-panel absolute right-0 bottom-0 z-30 overflow-y-auto"
+        className="sidebar-control-panel absolute right-0 bottom-0 overflow-y-auto"
         style={{
           top: 64,
           width: 288,
@@ -374,6 +384,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           padding: '16px',
           transform: isDisplayOpen ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 250ms ease',
+          zIndex: 60
         }}
       >
         <DisplayControls
@@ -386,7 +397,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
       {/* Settings sidebar */}
       <div
-        className="sidebar-control-panel absolute right-0 bottom-0 z-30 overflow-y-auto"
+        className="sidebar-control-panel absolute right-0 bottom-0 overflow-y-auto"
         style={{
           top: 64,
           width: 288,
@@ -395,6 +406,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           padding: '16px',
           transform: isSettingsOpen ? 'translateX(0)' : 'translateX(100%)',
           transition: 'transform 250ms ease',
+          zIndex: 60
         }}
       >
         <SettingsPanel

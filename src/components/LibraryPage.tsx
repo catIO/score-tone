@@ -199,7 +199,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-              ScoreTone
+              Score Tone
             </h1>
             <p className="text-sm mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
               Digital music stand

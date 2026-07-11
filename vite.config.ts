@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'masked-icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192x192.png', 'icons/icon-512x512.png', 'icons/icon-mac.png'],
       manifest: {
-        name: 'ScoreTone',
-        short_name: 'ScoreTone',
+        name: 'Score Tone',
+        short_name: 'Score Tone',
         description: 'Fast, tablet-friendly PWA sheet music reader for musicians.',
         theme_color: '#121212',
         background_color: '#121212',
@@ -40,6 +40,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,woff2,mjs}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
+      },
+      devOptions: {
+        enabled: true
       }
     })
   ]
