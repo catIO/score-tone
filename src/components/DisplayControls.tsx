@@ -1,12 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { FilterSettings } from '../services/settingsService';
-import PresetSelector from './PresetSelector';
 
 interface DisplayControlsProps {
   filters: FilterSettings;
-  presetName: string;
   onFiltersChange: (filters: FilterSettings) => void;
-  onPresetSelect: (name: string, filters: FilterSettings) => void;
 }
 
 const BG_PALETTE = [
@@ -37,25 +34,10 @@ const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }> = (
 );
 
 export const DisplayControls: React.FC<DisplayControlsProps> = ({
-  filters, presetName, onFiltersChange, onPresetSelect
+  filters, onFiltersChange
 }) => {
-  const [activeTab, setActiveTab] = useState<'sliders' | 'presets'>('sliders');
-
   const set = <K extends keyof FilterSettings>(key: K, value: FilterSettings[K]) =>
     onFiltersChange({ ...filters, [key]: value });
-
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: '10px 0',
-    fontSize: '13px',
-    fontWeight: 600,
-    background: 'transparent',
-    border: 'none',
-    borderBottom: `2px solid ${active ? 'var(--md-primary)' : 'transparent'}`,
-    color: active ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
-    cursor: 'pointer',
-    transition: 'color 150ms, border-color 150ms',
-  });
 
   const rowStyle: React.CSSProperties = {
     display: 'flex',
@@ -69,114 +51,105 @@ export const DisplayControls: React.FC<DisplayControlsProps> = ({
 
   return (
     <div className="flex flex-col h-full" style={{ color: 'var(--md-on-surface)' }}>
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--md-outline-variant)', marginBottom: 16 }}>
-        <button style={tabStyle(activeTab === 'sliders')} onClick={() => setActiveTab('sliders')}>
-          Sliders
-        </button>
-        <button style={tabStyle(activeTab === 'presets')} onClick={() => setActiveTab('presets')}>
-          Presets
-          {presetName !== 'Custom' && (
-            <span style={{ marginLeft: 6, fontSize: 11, opacity: 0.6 }}>({presetName})</span>
-          )}
-        </button>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingBottom: 14,
+        marginBottom: 16,
+        borderBottom: '1px solid var(--md-outline-variant)',
+      }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, fontFamily: 'Outfit, sans-serif' }}>Display Filters</h3>
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ paddingRight: 2 }}>
-        {activeTab === 'sliders' ? (
-          <div>
-            {/* Brightness */}
-            <div className="slider-container">
-              <div className="slider-header">
-                <span>Brightness</span><span>{filters.brightness}%</span>
-              </div>
-              <input type="range" min="50" max="180" value={filters.brightness}
-                onChange={e => set('brightness', parseInt(e.target.value))} className="custom-slider" />
+        <div>
+          {/* Brightness */}
+          <div className="slider-container">
+            <div className="slider-header">
+              <span>Brightness</span><span>{filters.brightness}%</span>
             </div>
+            <input type="range" min="50" max="180" value={filters.brightness}
+              onChange={e => set('brightness', parseInt(e.target.value))} className="custom-slider" />
+          </div>
 
-            {/* Contrast */}
-            <div className="slider-container">
-              <div className="slider-header">
-                <span>Contrast</span><span>{filters.contrast}%</span>
-              </div>
-              <input type="range" min="50" max="180" value={filters.contrast}
-                onChange={e => set('contrast', parseInt(e.target.value))} className="custom-slider" />
+          {/* Contrast */}
+          <div className="slider-container">
+            <div className="slider-header">
+              <span>Contrast</span><span>{filters.contrast}%</span>
             </div>
+            <input type="range" min="50" max="180" value={filters.contrast}
+              onChange={e => set('contrast', parseInt(e.target.value))} className="custom-slider" />
+          </div>
 
-            {/* Sepia */}
-            <div className="slider-container">
-              <div className="slider-header">
-                <span>Sepia</span><span>{filters.sepia}%</span>
-              </div>
-              <input type="range" min="0" max="100" value={filters.sepia}
-                onChange={e => set('sepia', parseInt(e.target.value))} className="custom-slider" />
+          {/* Sepia */}
+          <div className="slider-container">
+            <div className="slider-header">
+              <span>Sepia</span><span>{filters.sepia}%</span>
             </div>
+            <input type="range" min="0" max="100" value={filters.sepia}
+              onChange={e => set('sepia', parseInt(e.target.value))} className="custom-slider" />
+          </div>
 
-            {/* Warmth */}
-            <div className="slider-container">
-              <div className="slider-header">
-                <span>Paper Warmth</span><span>{filters.warmth}%</span>
-              </div>
-              <input type="range" min="0" max="100" value={filters.warmth}
-                onChange={e => set('warmth', parseInt(e.target.value))} className="custom-slider" />
+          {/* Warmth */}
+          <div className="slider-container">
+            <div className="slider-header">
+              <span>Paper Warmth</span><span>{filters.warmth}%</span>
             </div>
+            <input type="range" min="0" max="100" value={filters.warmth}
+              onChange={e => set('warmth', parseInt(e.target.value))} className="custom-slider" />
+          </div>
 
-            {/* Ink Darkness */}
-            <div className="slider-container">
-              <div className="slider-header">
-                <span>Ink Darkness</span><span>{filters.inkDarkness}%</span>
-              </div>
-              <input type="range" min="0" max="100" value={filters.inkDarkness}
-                onChange={e => set('inkDarkness', parseInt(e.target.value))} className="custom-slider" />
+          {/* Ink Darkness */}
+          <div className="slider-container">
+            <div className="slider-header">
+              <span>Ink Darkness</span><span>{filters.inkDarkness}%</span>
             </div>
+            <input type="range" min="0" max="100" value={filters.inkDarkness}
+              onChange={e => set('inkDarkness', parseInt(e.target.value))} className="custom-slider" />
+          </div>
 
-            {/* Toggles */}
-            <div style={{ marginTop: 12 }}>
-              <div style={rowStyle}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Night Mode</span>
-                <Toggle checked={filters.invert} onChange={v => set('invert', v)} />
-              </div>
-              <div style={rowStyle}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>High Contrast</span>
-                <Toggle checked={filters.highContrast} onChange={v => set('highContrast', v)} />
-              </div>
+          {/* Toggles */}
+          <div style={{ marginTop: 12 }}>
+            <div style={rowStyle}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Night Mode</span>
+              <Toggle checked={filters.invert} onChange={v => set('invert', v)} />
             </div>
-
-            {/* Background palette */}
-            <div style={{ marginTop: 16 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--md-on-surface-variant)', marginBottom: 10 }}>
-                Page Background
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {BG_PALETTE.map(bg => {
-                  const active = filters.backgroundColor.toLowerCase() === bg.value.toLowerCase();
-                  return (
-                    <button
-                      key={bg.name}
-                      onClick={() => set('backgroundColor', bg.value)}
-                      title={bg.name}
-                      style={{
-                        width: 32, height: 32,
-                        borderRadius: '50%',
-                        backgroundColor: bg.value,
-                        border: `2px solid ${active ? 'var(--md-primary)' : 'var(--md-outline-variant)'}`,
-                        transform: active ? 'scale(1.15)' : 'scale(1)',
-                        transition: 'transform 150ms, border-color 150ms',
-                        cursor: 'pointer',
-                      }}
-                    />
-                  );
-                })}
-              </div>
+            <div style={rowStyle}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>High Contrast</span>
+              <Toggle checked={filters.highContrast} onChange={v => set('highContrast', v)} />
             </div>
           </div>
-        ) : (
-          <PresetSelector
-            currentPresetName={presetName}
-            currentFilters={filters}
-            onPresetSelect={onPresetSelect}
-          />
-        )}
+
+          {/* Background palette */}
+          <div style={{ marginTop: 16 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--md-on-surface-variant)', marginBottom: 10 }}>
+              Page Background
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {BG_PALETTE.map(bg => {
+                const active = filters.backgroundColor.toLowerCase() === bg.value.toLowerCase();
+                return (
+                  <button
+                    key={bg.name}
+                    onClick={() => set('backgroundColor', bg.value)}
+                    title={bg.name}
+                    style={{
+                      width: 32, height: 32,
+                      borderRadius: '50%',
+                      backgroundColor: bg.value,
+                      border: `2px solid ${active ? 'var(--md-primary)' : 'var(--md-outline-variant)'}`,
+                      transform: active ? 'scale(1.15)' : 'scale(1)',
+                      transition: 'transform 150ms, border-color 150ms',
+                      cursor: 'pointer',
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

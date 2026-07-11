@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Sliders, Settings, Maximize2, Minimize2, Check, Save, Share2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { ScoreFile } from '../services/storageService';
 
 interface ViewerToolbarProps {
@@ -63,22 +62,22 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
       {/* Left: back + title */}
       <div className="flex items-center gap-1 flex-1 min-w-0 mr-2">
         <button onClick={onBack} className="md-icon-btn flex-shrink-0" title="Back to library">
-          <ArrowLeft className="w-5 h-5" />
+          <span className="material-symbols-outlined text-[22px] leading-none">arrow_back</span>
         </button>
         <div className="min-w-0 ml-1">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>{file.name}</p>
           <div className="flex items-center gap-2 mt-0.5">
             {file.offline ? (
-              <span className="md-chip md-chip-success text-[10px]">
-                <Check className="w-2.5 h-2.5" /> Offline
+              <span className="md-chip md-chip-success text-[10px] py-0.5 px-2 flex items-center gap-0.5">
+                <span className="material-symbols-outlined text-[12px] leading-none">check</span> Offline
               </span>
             ) : (
               <button
                 onClick={onSaveOffline}
-                className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors"
+                className="flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors"
                 style={{ background: 'var(--md-primary-container)', color: 'var(--md-on-primary-container)' }}
               >
-                <Save className="w-2.5 h-2.5" /> Save Offline
+                <span className="material-symbols-outlined text-[12px] leading-none">save</span> Save Offline
               </button>
             )}
           </div>
@@ -93,7 +92,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           className="md-icon-btn"
           style={{ width: 36, height: 36 }}
         >
-          <ChevronLeft className="w-5 h-5" />
+          <span className="material-symbols-outlined text-[22px] leading-none">chevron_left</span>
         </button>
 
         <form onSubmit={handleJumpSubmit} className="flex items-center gap-1">
@@ -118,7 +117,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           className="md-icon-btn"
           style={{ width: 36, height: 36 }}
         >
-          <ChevronRight className="w-5 h-5" />
+          <span className="material-symbols-outlined text-[22px] leading-none">chevron_right</span>
         </button>
       </div>
 
@@ -132,7 +131,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           title="Zoom out"
           style={{ width: 36, height: 36 }}
         >
-          <ZoomOut className="w-4 h-4" />
+          <span className="material-symbols-outlined text-[20px] leading-none">zoom_out</span>
         </button>
 
         <button
@@ -151,7 +150,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           title="Zoom in"
           style={{ width: 36, height: 36 }}
         >
-          <ZoomIn className="w-4 h-4" />
+          <span className="material-symbols-outlined text-[20px] leading-none">zoom_in</span>
         </button>
 
         <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
@@ -163,17 +162,19 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
             title={shared ? 'Link copied!' : 'Copy share link'}
             style={{ width: 36, height: 36 }}
           >
-            {shared ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+            <span className="material-symbols-outlined text-[20px] leading-none">
+              {shared ? 'check' : 'share'}
+            </span>
           </button>
         )}
 
         <button
           onClick={onToggleDisplay}
           className={`md-icon-btn ${isDisplayOpen ? 'active' : ''}`}
-          title="Display filters"
+          title="Page color & style"
           style={{ width: 36, height: 36 }}
         >
-          <Sliders className="w-4 h-4" />
+          <span className="material-symbols-outlined text-[20px] leading-none">palette</span>
         </button>
 
         <button
@@ -182,7 +183,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           title="Viewer settings"
           style={{ width: 36, height: 36 }}
         >
-          <Settings className="w-4 h-4" />
+          <span className="material-symbols-outlined text-[20px] leading-none">settings</span>
         </button>
 
         <button
@@ -191,7 +192,9 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
           style={{ width: 36, height: 36 }}
         >
-          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          <span className="material-symbols-outlined text-[20px] leading-none">
+            {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
+          </span>
         </button>
       </div>
     </div>

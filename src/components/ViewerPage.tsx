@@ -39,7 +39,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   // Active filter state
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
-  const [presetName, setPresetName] = useState<string>(appSettings.lastPreset);
   const [zoom, setZoom] = useState<number>(1.0);
 
   const hideTimerRef = useRef<number | null>(null);
@@ -222,27 +221,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
   };
 
-  // Handle Preset updates
-  const handlePresetSelect = (name: string, newFilters: FilterSettings) => {
-    setPresetName(name);
-    setFilters(newFilters);
-    
-    // Save to settings
-    onSettingsChange({
-      ...appSettings,
-      lastPreset: name,
-      customSliders: newFilters
-    });
-  };
-
   // Handle individual filter slider updates
   const handleFiltersChange = (newFilters: FilterSettings) => {
-    setPresetName('Custom');
     setFilters(newFilters);
 
     onSettingsChange({
       ...appSettings,
-      lastPreset: 'Custom',
       customSliders: newFilters
     });
   };
@@ -389,9 +373,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       >
         <DisplayControls
           filters={filters}
-          presetName={presetName}
           onFiltersChange={handleFiltersChange}
-          onPresetSelect={handlePresetSelect}
         />
       </div>
 
