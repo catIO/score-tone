@@ -9,7 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'masked-icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192x192.png', 'icons/icon-512x512.png', 'icons/icon-mac.png'],
       manifest: {
-        name: 'ScoreTone - PDF Music Viewer',
+        name: 'ScoreTone',
         short_name: 'ScoreTone',
         description: 'Fast, tablet-friendly PWA sheet music reader for musicians.',
         theme_color: '#121212',
