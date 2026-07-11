@@ -30,16 +30,40 @@ export const App: React.FC = () => {
       try {
         const filesList = await storageService.getFiles();
         const existing = filesList.find((f) => f.id === targetId);
+        const cachedBlob = await storageService.getFileData(targetId);
 
-        if (existing) {
-          const cachedBlob = await storageService.getFileData(targetId);
-          // Open the file. If cachedBlob is undefined, the ViewerPage fallback will download it.
-          setActiveFile(existing);
-          setInMemoryBlob(cachedBlob || undefined);
+        if (cachedBlob) {
+          // File is cached offline: safe to open immediately without network or auth checks
+          setActiveFile(existing || {
+            id: targetId,
+            name,
+            source: 'google-drive',
+            lastOpened: Date.now(),
+            lastPage: 1,
+            offline: true
+          });
+          setInMemoryBlob(cachedBlob);
           setActivePage('viewer');
+          setPendingLink(null);
         } else {
-          // If not in our library list, treat it as a shared score link
-          setPendingLink({ driveId: targetId, name });
+          // File is NOT cached: we must have a Google Drive access token.
+          // If we don't have one in memory, direct to the Google Sign-in gate
+          if (googleDriveService.hasToken()) {
+            setActiveFile(existing || {
+              id: targetId,
+              name,
+              source: 'google-drive',
+              lastOpened: Date.now(),
+              lastPage: 1,
+              offline: false
+            });
+            setInMemoryBlob(undefined);
+            setActivePage('viewer');
+            setPendingLink(null);
+          } else {
+            // No token: show sign-in gate so OAuth popup is triggered on click (gesture)
+            setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
+          }
         }
       } catch (e) {
         console.error('[ScoreTone] Failed to parse URL parameters', e);
@@ -49,6 +73,7 @@ export const App: React.FC = () => {
       setActivePage('library');
       setActiveFile(null);
       setInMemoryBlob(undefined);
+      setPendingLink(null);
     }
   };
 

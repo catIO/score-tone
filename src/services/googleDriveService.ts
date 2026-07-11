@@ -50,6 +50,10 @@ export const googleDriveService = {
     return !!CLIENT_ID;
   },
 
+  hasToken(): boolean {
+    return !!accessToken;
+  },
+
   // Initialize Google OAuth2 Token Client (no picker needed)
   initTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void): void {
     if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
