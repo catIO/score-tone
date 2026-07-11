@@ -1,19 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <defs>
-    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#818cf8"/>
-      <stop offset="100%" stop-color="#4f46e5"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="128" fill="#0a0a0c"/>
-  <!-- Soundwave visualizer lines -->
-  <rect x="130" y="220" width="16" height="72" rx="8" fill="#312e81"/>
-  <rect x="170" y="180" width="16" height="152" rx="8" fill="#4338ca"/>
-  <rect x="210" y="140" width="16" height="232" rx="8" fill="#4f46e5"/>
-  <rect x="250" y="100" width="16" height="312" rx="8" fill="url(#glow)"/>
-  <rect x="290" y="140" width="16" height="232" rx="8" fill="#4f46e5"/>
-  <rect x="330" y="180" width="16" height="152" rx="8" fill="#4338ca"/>
-  <rect x="370" y="220" width="16" height="72" rx="8" fill="#312e81"/>
-  <!-- Clef-inspired swirl -->
-  <path d="M256 120c-15 0-25 10-25 25 0 20 20 30 35 45 20 20 30 45 30 70 0 50-40 90-90 90s-90-40-90-90c0-35 20-65 50-80" fill="none" stroke="#818cf8" stroke-width="24" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" height="100" viewBox="0 -960 960 960" width="100">
+  <style>
+    @media (prefers-color-scheme: dark) {
+      path { fill: #e3e3e3; }
+    }
+    @media (prefers-color-scheme: light) {
+      path { fill: #333333; }
+    }
+  </style>
+  <path d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29ZM320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z"/>
 </svg>

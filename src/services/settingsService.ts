@@ -30,9 +30,20 @@ const DEFAULT_FILTERS: FilterSettings = {
   inkDarkness: 0
 };
 
+const SEPIA_FILTERS: FilterSettings = {
+  sepia: 80,
+  brightness: 90,
+  contrast: 114,
+  warmth: 100,
+  invert: false,
+  highContrast: false,
+  backgroundColor: '#1e1e24',
+  inkDarkness: 0
+};
+
 const DEFAULT_SETTINGS: AppSettings = {
-  lastPreset: 'Original',
-  customSliders: DEFAULT_FILTERS,
+  lastPreset: 'Sepia',
+  customSliders: SEPIA_FILTERS,
   fitMode: 'width',
   scrollMode: 'single',
   tapZoneWidth: 20,
@@ -53,7 +64,7 @@ export const settingsService = {
         ...DEFAULT_SETTINGS,
         ...parsed,
         customSliders: {
-          ...DEFAULT_FILTERS,
+          ...SEPIA_FILTERS,
           ...parsed.customSliders
         }
       };
@@ -78,11 +89,7 @@ export const settingsService = {
         ...DEFAULT_FILTERS
       },
       'Sepia': {
-        ...DEFAULT_FILTERS,
-        sepia: 80,
-        brightness: 95,
-        contrast: 95,
-        backgroundColor: '#f4ecd8'
+        ...SEPIA_FILTERS
       },
       'Warm Paper': {
         ...DEFAULT_FILTERS,

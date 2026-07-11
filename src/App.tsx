@@ -4,7 +4,7 @@ import ViewerPage from './components/ViewerPage';
 import { settingsService, type AppSettings } from './services/settingsService';
 import { storageService, type ScoreFile } from './services/storageService';
 import { googleDriveService } from './services/googleDriveService';
-import { Loader2, AlertCircle, Music } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'library' | 'viewer'>('library');
@@ -103,10 +103,12 @@ export const App: React.FC = () => {
       <div className="w-screen h-screen flex flex-col items-center justify-center px-6 gap-8"
         style={{ background: 'var(--md-surface)', color: 'var(--md-on-surface)' }}>
 
-        {/* Icon */}
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-          style={{ background: 'var(--md-primary-container)' }}>
-          <Music className="w-8 h-8" style={{ color: 'var(--md-on-primary-container)' }} />
+        {/* App Logo */}
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-black"
+          style={{ border: '1px solid var(--md-outline-variant)' }}>
+          <svg viewBox="0 -960 960 960" className="w-9 h-9" fill="#ffffff">
+            <path d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29ZM320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z"/>
+          </svg>
         </div>
 
         {/* Text */}
