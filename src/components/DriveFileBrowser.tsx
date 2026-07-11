@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { googleDriveService, GoogleDriveFileMetadata, DRIVE_FOLDER_ID } from '../services/googleDriveService';
-import { FileText, X, CheckCircle2 } from 'lucide-react';
+import { googleDriveService, GoogleDriveFileMetadata } from '../services/googleDriveService';
+import { FileText, X, CheckCircle2, Search } from 'lucide-react';
 
 interface DriveFileBrowserProps {
   onSelect: (file: GoogleDriveFileMetadata) => void;
@@ -14,15 +14,24 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
   const [selected, setSelected] = useState<string | null>(null);
   const [nextPageToken, setNextPageToken] = useState<string | undefined>();
   const [loadingMore, setLoadingMore] = useState(false);
+  
+  // Header state (dynamically updated from search results)
+  const [isFilteredByFolder, setIsFilteredByFolder] = useState(false);
 
-  const loadFiles = useCallback(async () => {
+  // Search input state
+  const [searchInput, setSearchInput] = useState('');
+  const [activeSearch, setActiveSearch] = useState('');
+
+  const loadFiles = useCallback(async (searchQuery?: string) => {
     try {
       setLoading(true);
       setError(null);
+      setSelected(null);
       const token = await googleDriveService.getAccessToken();
-      const result = await googleDriveService.listPdfFiles(token);
+      const result = await googleDriveService.listPdfFiles(token, undefined, searchQuery);
       setFiles(result.files);
       setNextPageToken(result.nextPageToken);
+      setIsFilteredByFolder(result.isFiltered);
     } catch (err: any) {
       setError(err.message || 'Failed to load Drive files.');
     } finally {
@@ -35,7 +44,7 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
     try {
       setLoadingMore(true);
       const token = await googleDriveService.getAccessToken();
-      const result = await googleDriveService.listPdfFiles(token, nextPageToken);
+      const result = await googleDriveService.listPdfFiles(token, nextPageToken, activeSearch);
       setFiles(prev => [...prev, ...result.files]);
       setNextPageToken(result.nextPageToken);
     } catch (err: any) {
@@ -45,7 +54,15 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
     }
   };
 
-  useEffect(() => { loadFiles(); }, [loadFiles]);
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setActiveSearch(searchInput);
+    loadFiles(searchInput);
+  };
 
   const handleConfirm = () => {
     const file = files.find(f => f.id === selected);
@@ -84,9 +101,9 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
           style={{ borderBottom: '1px solid var(--md-outline-variant)' }}>
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-              {DRIVE_FOLDER_ID ? 'Score Folder' : 'Google Drive'}
+              {isFilteredByFolder ? 'Score Folder' : 'Google Drive'}
             </h2>
-            {DRIVE_FOLDER_ID && (
+            {isFilteredByFolder && (
               <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>Filtered to your scores folder</p>
             )}
           </div>
@@ -95,13 +112,39 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
           </button>
         </div>
 
+        {/* Search Bar */}
+        <form onSubmit={handleSearchSubmit} className="px-4 pt-4 pb-2">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
+            style={{ background: 'var(--md-surface-2)', border: '1px solid var(--md-outline-variant)' }}>
+            <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="Search scores by name..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-white focus:outline-none placeholder-slate-500"
+            />
+            {searchInput && (
+              <button
+                type="button"
+                onClick={() => { setSearchInput(''); setActiveSearch(''); loadFiles(''); }}
+                className="text-xs text-slate-400 hover:text-white"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </form>
+
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-3" style={{ minHeight: 0 }}>
           {loading && (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
               <div className="w-8 h-8 rounded-full border-2 border-transparent animate-spin"
                 style={{ borderTopColor: 'var(--md-primary)' }} />
-              <span className="text-sm" style={{ color: 'var(--md-on-surface-variant)' }}>Loading scores…</span>
+              <span className="text-sm" style={{ color: 'var(--md-on-surface-variant)' }}>
+                {activeSearch ? 'Searching Drive…' : 'Loading scores…'}
+              </span>
             </div>
           )}
 
@@ -109,7 +152,7 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
             <div className="rounded-xl p-4 mb-3 text-sm"
               style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}>
               {error}
-              <button onClick={loadFiles} className="ml-3 underline opacity-80 hover:opacity-100">Retry</button>
+              <button onClick={() => loadFiles(activeSearch)} className="ml-3 underline opacity-80 hover:opacity-100">Retry</button>
             </div>
           )}
 
@@ -117,7 +160,9 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
             <div className="flex flex-col items-center justify-center py-16 gap-2"
               style={{ color: 'var(--md-on-surface-variant)' }}>
               <FileText className="w-10 h-10 opacity-30" />
-              <span className="text-sm">No PDF files found</span>
+              <span className="text-sm">
+                {activeSearch ? 'No matching scores found' : 'No PDF files found'}
+              </span>
             </div>
           )}
 
@@ -178,3 +223,4 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
     </div>
   );
 };
+export default DriveFileBrowser;

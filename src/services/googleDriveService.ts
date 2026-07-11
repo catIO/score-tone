@@ -98,15 +98,42 @@ export const googleDriveService = {
   },
 
   // List PDF files from Google Drive using the REST API directly (no Picker widget needed)
-  async listPdfFiles(token: string, pageToken?: string): Promise<{ files: GoogleDriveFileMetadata[]; nextPageToken?: string }> {
-    const folderFilter = DRIVE_FOLDER_ID ? ` and '${DRIVE_FOLDER_ID}' in parents` : '';
-    const query = encodeURIComponent(`mimeType='application/pdf' and trashed=false${folderFilter}`);
-    const fields = encodeURIComponent('nextPageToken,files(id,name,size,modifiedTime,thumbnailLink)');
-    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+  async listPdfFiles(token: string, pageToken?: string, searchTerm?: string): Promise<{ files: GoogleDriveFileMetadata[]; nextPageToken?: string; isFiltered: boolean }> {
+    let query = `mimeType='application/pdf' and trashed=false`;
+    let isFiltered = false;
+    
+    // If DRIVE_FOLDER_ID is set, we attempt to filter by that folder.
+    if (DRIVE_FOLDER_ID) {
+      query += ` and '${DRIVE_FOLDER_ID}' in parents`;
+      isFiltered = true;
+    }
 
-    const response = await fetch(url, {
+    if (searchTerm) {
+      // Escape single quotes for search
+      const escaped = searchTerm.replace(/'/g, "\\'");
+      query += ` and name contains '${escaped}'`;
+    }
+    
+    const fields = encodeURIComponent('nextPageToken,files(id,name,size,modifiedTime,thumbnailLink)');
+    let url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+
+    let response = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` }
     });
+
+    // If query failed (e.g. folder ID doesn't exist for this user), retry without the folder filter
+    if (!response.ok && DRIVE_FOLDER_ID) {
+      console.warn('[ScoreTone] Failed to filter by folder, retrying with global drive search...');
+      isFiltered = false;
+      let fallbackQuery = `mimeType='application/pdf' and trashed=false`;
+      if (searchTerm) {
+        fallbackQuery += ` and name contains '${searchTerm.replace(/'/g, "\\'")}'`;
+      }
+      url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fallbackQuery)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    }
 
     if (!response.ok) {
       if (response.status === 401) {
@@ -116,15 +143,41 @@ export const googleDriveService = {
     }
 
     const data = await response.json();
+    let driveFiles = data.files || [];
+    let nextToken = data.nextPageToken;
+
+    // Google API Quirk: searching for a folder that isn't yours returns a "200 OK" status with an empty files list.
+    // So if the list is empty and folder filtering was turned on, we fallback and search the entire Drive.
+    if (driveFiles.length === 0 && DRIVE_FOLDER_ID) {
+      console.warn('[ScoreTone] Folder search returned 0 files, retrying with global drive search...');
+      isFiltered = false;
+      let fallbackQuery = `mimeType='application/pdf' and trashed=false`;
+      if (searchTerm) {
+        fallbackQuery += ` and name contains '${searchTerm.replace(/'/g, "\\'")}'`;
+      }
+      const fallbackUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fallbackQuery)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+      
+      const fallbackResponse = await fetch(fallbackUrl, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        driveFiles = fallbackData.files || [];
+        nextToken = fallbackData.nextPageToken;
+      }
+    }
+
     return {
-      files: (data.files || []).map((f: any) => ({
+      files: driveFiles.map((f: any) => ({
         id: f.id,
         name: f.name,
         size: parseInt(f.size || '0', 10),
         modifiedTime: f.modifiedTime,
         thumbnailLink: f.thumbnailLink
       })),
-      nextPageToken: data.nextPageToken
+      nextPageToken: nextToken,
+      isFiltered
     };
   },
 
