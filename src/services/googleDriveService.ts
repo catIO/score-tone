@@ -16,43 +16,16 @@ export interface GoogleDriveFileMetadata {
 
 let accessToken: string | null = null;
 let tokenClient: any = null;
-let gapiInitialized = false;
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
-const APP_ID = import.meta.env.VITE_GOOGLE_APP_ID || ''; // Project Number
+export const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID || '';
 
 export const googleDriveService = {
   isConfigured(): boolean {
-    return !!(CLIENT_ID && API_KEY && APP_ID);
+    return !!CLIENT_ID;
   },
 
-  // Initialize the Google API Client libraries
-  initGapi(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (gapiInitialized) {
-        resolve();
-        return;
-      }
-
-      if (!window.gapi) {
-        reject(new Error('Google API Client (gapi) script not loaded. Check network connection.'));
-        return;
-      }
-
-      window.gapi.load('picker', {
-        callback: () => {
-          gapiInitialized = true;
-          resolve();
-        },
-        onerror: () => {
-          reject(new Error('Failed to load Google Picker API.'));
-        }
-      });
-    });
-  },
-
-  // Initialize Google OAuth2 Token Client
+  // Initialize Google OAuth2 Token Client (no gapi/picker needed)
   initTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void): void {
     if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
       onError(new Error('Google Identity Services client not loaded.'));
@@ -62,7 +35,9 @@ export const googleDriveService = {
     try {
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        // drive.readonly: lets us list + download any Drive file.
+        // Works for test-mode users without Google verification.
+        scope: 'https://www.googleapis.com/auth/drive.readonly',
         callback: (response: any) => {
           if (response.error) {
             onError(response);
@@ -83,8 +58,6 @@ export const googleDriveService = {
       return accessToken;
     }
 
-    await this.initGapi();
-
     return new Promise((resolve, reject) => {
       this.initTokenClient(
         (token) => resolve(token),
@@ -92,7 +65,6 @@ export const googleDriveService = {
       );
 
       if (tokenClient) {
-        // Request token (shows OAuth prompt to user)
         tokenClient.requestAccessToken({ prompt: '' });
       } else {
         reject(new Error('OAuth token client was not initialized.'));
@@ -100,92 +72,50 @@ export const googleDriveService = {
     });
   },
 
-  // Open Google Picker to select a PDF
-  async pickPdf(onSelected: (metadata: GoogleDriveFileMetadata) => void, onError: (err: any) => void): Promise<void> {
-    try {
-      const token = await this.getAccessToken();
-      
-      const pickerCallback = async (data: any) => {
-        if (data.action === window.google.picker.Action.PICKED) {
-          const doc = data[window.google.picker.Response.DOCUMENTS][0];
-          const fileMetadata: GoogleDriveFileMetadata = {
-            id: doc[window.google.picker.Document.ID],
-            name: doc[window.google.picker.Document.NAME],
-            size: doc[window.google.picker.Document.SIZE_BYTES] || 0,
-            thumbnailLink: doc[window.google.picker.Document.THUMBNAIL_URL] || undefined
-          };
-          
-          // Request extra file details from Drive API to get actual modified time if missing
-          try {
-            const driveMeta = await googleDriveService.fetchFileMetadata(fileMetadata.id, token);
-            fileMetadata.modifiedTime = driveMeta.modifiedTime;
-            if (driveMeta.thumbnailLink) {
-              fileMetadata.thumbnailLink = driveMeta.thumbnailLink;
-            }
-          } catch (e) {
-            console.warn('Failed to fetch rich metadata, using picker details', e);
-          }
+  // List PDF files from Google Drive using the REST API directly (no Picker widget needed)
+  async listPdfFiles(token: string, pageToken?: string): Promise<{ files: GoogleDriveFileMetadata[]; nextPageToken?: string }> {
+    const folderFilter = DRIVE_FOLDER_ID ? ` and '${DRIVE_FOLDER_ID}' in parents` : '';
+    const query = encodeURIComponent(`mimeType='application/pdf' and trashed=false${folderFilter}`);
+    const fields = encodeURIComponent('nextPageToken,files(id,name,size,modifiedTime,thumbnailLink)');
+    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
 
-          onSelected(fileMetadata);
-        } else if (data.action === window.google.picker.Action.CANCEL) {
-          onError(new Error('Google Picker selection was cancelled.'));
-        }
-      };
-
-      // Set up Google Picker
-      const view = new window.google.picker.DocsView(window.google.picker.ViewId.PDFS);
-      view.setMimeTypes('application/pdf');
-
-      const picker = new window.google.picker.PickerBuilder()
-        .enableFeature(window.google.picker.Feature.NAV_HIDDEN)
-        .setDeveloperKey(API_KEY)
-        .setAppId(APP_ID)
-        .setOAuthToken(token)
-        .addView(view)
-        .setCallback(pickerCallback)
-        .setTitle('Select Score PDF')
-        .build();
-
-      picker.setVisible(true);
-    } catch (err) {
-      onError(err);
-    }
-  },
-
-  // Get metadata details from Google Drive API
-  async fetchFileMetadata(fileId: string, token: string): Promise<any> {
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,thumbnailLink`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
-    );
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch Drive file metadata: ${response.statusText}`);
+      if (response.status === 401) {
+        accessToken = null;
+      }
+      throw new Error(`Failed to list Drive files: ${response.statusText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    return {
+      files: (data.files || []).map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        size: parseInt(f.size || '0', 10),
+        modifiedTime: f.modifiedTime,
+        thumbnailLink: f.thumbnailLink
+      })),
+      nextPageToken: data.nextPageToken
+    };
   },
 
   // Download Google Drive File content as Blob
   async downloadFile(fileId: string): Promise<Blob> {
     const token = await this.getAccessToken();
-    
+
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
+        headers: { Authorization: `Bearer ${token}` }
       }
     );
 
     if (!response.ok) {
       if (response.status === 401) {
-        // Clear token on auth error so next request triggers re-auth
         accessToken = null;
       }
       throw new Error(`Failed to download file from Google Drive: ${response.statusText}`);
@@ -197,5 +127,6 @@ export const googleDriveService = {
   // Clear session token (logout/disconnect)
   logout(): void {
     accessToken = null;
+    tokenClient = null;
   }
 };

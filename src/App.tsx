@@ -4,7 +4,7 @@ import ViewerPage from './components/ViewerPage';
 import { settingsService, type AppSettings } from './services/settingsService';
 import { storageService, type ScoreFile } from './services/storageService';
 import { googleDriveService } from './services/googleDriveService';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, Music } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'library' | 'viewer'>('library');
@@ -14,84 +14,62 @@ export const App: React.FC = () => {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Check for shared Google Drive link on mount
+  // Pending deep-link: stored until user clicks a button (needed for popup unblock)
+  const [pendingLink, setPendingLink] = useState<{ driveId: string; name: string } | null>(null);
+
+  // On mount: detect a shared link in the URL but don't trigger OAuth automatically
   useEffect(() => {
-    const handleUrlLink = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const driveId = params.get('driveId');
-      const shareName = params.get('name');
-
-      if (!driveId) return;
-
-      setImporting(true);
-      setImportError(null);
-
-      try {
-        // Check if file metadata is already in IndexedDB
-        const filesList = await storageService.getFiles();
-        const existing = filesList.find((f) => f.id === driveId);
-
-        if (existing) {
-          // Check if we have the blob cached
-          const cachedBlob = await storageService.getFileData(driveId);
-          if (cachedBlob) {
-            handleOpenFile(existing, cachedBlob);
-            setImporting(false);
-            // Clear URL parameters
-            window.history.replaceState({}, document.title, window.location.origin);
-            return;
-          }
-        }
-
-        // File is not cached or is new: fetch from Google Drive
-        const blob = await googleDriveService.downloadFile(driveId);
-        
-        let finalName = shareName || 'Shared Score';
-        let size = blob.size;
-        
-        try {
-          const token = await googleDriveService.getAccessToken();
-          const driveMeta = await googleDriveService.fetchFileMetadata(driveId, token);
-          if (driveMeta.name) {
-            finalName = driveMeta.name.replace(/\.pdf$/i, '');
-          }
-          if (driveMeta.size) {
-            size = driveMeta.size;
-          }
-        } catch (e) {
-          console.warn('Could not retrieve metadata, using link defaults', e);
-        }
-
-        const newFile: ScoreFile = {
-          id: driveId,
-          name: finalName,
-          source: 'google-drive',
-          lastOpened: Date.now(),
-          lastPage: 1,
-          offline: false,
-          size
-        };
-
-        // Save metadata to library
-        await storageService.saveFileMetadata(newFile);
-        
-        // Open file immediately
-        handleOpenFile(newFile, blob);
-        
-        // Clear search parameters
-        window.history.replaceState({}, document.title, window.location.origin);
-      } catch (err: any) {
-        console.error('Failed to import shared Google Drive file', err);
-        setImportError(err.message || 'Failed to download shared score.');
-      } finally {
-        setImporting(false);
-      }
-    };
-
-    handleUrlLink();
+    const params = new URLSearchParams(window.location.search);
+    const driveId = params.get('driveId');
+    const name = params.get('name') || 'Shared Score';
+    if (driveId) {
+      // Clear the URL immediately so refreshing doesn't re-trigger
+      window.history.replaceState({}, document.title, window.location.origin);
+      setPendingLink({ driveId, name });
+    }
   }, []);
 
-  // Save settings whenever they change
+  const importSharedScore = async (driveId: string, shareName: string) => {
+    setImporting(true);
+    setImportError(null);
+    setPendingLink(null);
+
+    try {
+      // Check if we already have this file cached
+      const filesList = await storageService.getFiles();
+      const existing = filesList.find((f) => f.id === driveId);
+      if (existing) {
+        const cachedBlob = await storageService.getFileData(driveId);
+        if (cachedBlob) {
+          handleOpenFile(existing, cachedBlob);
+          setImporting(false);
+          return;
+        }
+      }
+
+      // Triggers OAuth popup — safe here because user just clicked a button
+      const blob = await googleDriveService.downloadFile(driveId);
+
+      const newFile: ScoreFile = {
+        id: driveId,
+        name: shareName.replace(/\.pdf$/i, ''),
+        source: 'google-drive',
+        lastOpened: Date.now(),
+        lastPage: 1,
+        offline: false,
+        size: blob.size
+      };
+
+      await storageService.saveFileMetadata(newFile);
+      handleOpenFile(newFile, blob);
+    } catch (err: any) {
+      console.error('Failed to import shared Google Drive file', err);
+      setImportError(err.message || 'Failed to download shared score.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const handleSettingsChange = (newSettings: AppSettings) => {
     setAppSettings(newSettings);
     settingsService.saveSettings(newSettings);
@@ -109,11 +87,69 @@ export const App: React.FC = () => {
     setInMemoryBlob(undefined);
   };
 
+  // Loading spinner while downloading
   if (importing) {
     return (
       <div className="w-screen h-screen flex flex-col items-center justify-center bg-[#0a0a0c] text-white gap-4">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="font-semibold text-sm text-slate-300">Importing shared score from Google Drive...</p>
+        <p className="font-semibold text-sm text-slate-300">Importing shared score from Google Drive…</p>
+      </div>
+    );
+  }
+
+  // Deep-link sign-in gate
+  if (pendingLink) {
+    return (
+      <div className="w-screen h-screen flex flex-col items-center justify-center px-6 gap-8"
+        style={{ background: 'var(--md-surface)', color: 'var(--md-on-surface)' }}>
+
+        {/* Icon */}
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+          style={{ background: 'var(--md-primary-container)' }}>
+          <Music className="w-8 h-8" style={{ color: 'var(--md-on-primary-container)' }} />
+        </div>
+
+        {/* Text */}
+        <div className="text-center max-w-xs">
+          <h1 className="text-xl font-bold mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--md-on-surface)' }}>
+            Open Shared Score
+          </h1>
+          <p className="text-sm" style={{ color: 'var(--md-on-surface-variant)' }}>
+            You were shared:{' '}
+            <span className="font-semibold" style={{ color: 'var(--md-on-surface)' }}>"{pendingLink.name}"</span>
+          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--md-on-surface-variant)' }}>
+            Sign in with Google to continue.
+          </p>
+        </div>
+
+        {importError && (
+          <div className="rounded-xl p-4 text-sm max-w-sm w-full"
+            style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}>
+            {importError}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <button
+            onClick={() => importSharedScore(pendingLink.driveId, pendingLink.name)}
+            className="md-btn-filled w-full py-3 flex items-center justify-center gap-2"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Sign in with Google
+          </button>
+          <button
+            onClick={() => setPendingLink(null)}
+            className="md-btn-text w-full py-2 text-sm"
+          >
+            Go to Library
+          </button>
+        </div>
       </div>
     );
   }
@@ -126,8 +162,8 @@ export const App: React.FC = () => {
           <div className="flex-1">
             <p className="font-semibold text-rose-300">Link Import Failed</p>
             <p className="text-xs mt-1">{importError}</p>
-            <button 
-              onClick={() => setImportError(null)} 
+            <button
+              onClick={() => setImportError(null)}
               className="mt-2 text-xs font-bold text-rose-400 hover:text-white"
             >
               Dismiss

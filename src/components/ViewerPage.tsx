@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import type { ScoreFile } from '../services/storageService';
 import { storageService } from '../services/storageService';
@@ -31,8 +31,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Panel display toggles
-  const [showControls, setShowControls] = useState<boolean>(true);
+  // Panel display toggles — toolbar shown only when hovering the top zone
+  const [toolbarVisible, setToolbarVisible] = useState<boolean>(false);
   const [isDisplayOpen, setIsDisplayOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
@@ -40,7 +40,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
   const [presetName, setPresetName] = useState<string>(appSettings.lastPreset);
 
-  const controlsTimeoutRef = useRef<number | null>(null);
+  const hideTimerRef = useRef<number | null>(null);
 
   // Load PDF file on mount
   useEffect(() => {
@@ -87,13 +87,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
 
     loadPdf();
-    resetControlsTimeout();
 
     return () => {
       active = false;
-      if (controlsTimeoutRef.current) {
-        window.clearTimeout(controlsTimeoutRef.current);
-      }
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     };
   }, [file.id, inMemoryBlob]);
 
@@ -101,120 +98,85 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const handlePageChange = async (newPage: number) => {
     if (newPage < 1 || newPage > totalPages) return;
     setCurrentPage(newPage);
-    
-    // Save page index inside IndexedDB
     try {
-      const updatedMetadata = { ...file, lastPage: newPage, lastOpened: Date.now() };
-      await storageService.saveFileMetadata(updatedMetadata);
+      await storageService.saveFileMetadata({ ...file, lastPage: newPage, lastOpened: Date.now() });
     } catch (err) {
-      console.warn('Failed to update recent page metadata', err);
+      console.warn('Failed to update page metadata', err);
     }
   };
 
   // Save the currently loaded in-memory blob to IndexedDB
   const handleSaveOffline = async () => {
-    if (!inMemoryBlob) {
-      setErrorMsg('Cannot cache this file: source data is missing.');
-      return;
-    }
-    
+    if (!inMemoryBlob) { setErrorMsg('Cannot cache: source data is missing.'); return; }
     setLoading(true);
     try {
       await storageService.cacheFileOffline(file, inMemoryBlob);
-      file.offline = true; // Mutate local reference for immediate rendering
-      resetControlsTimeout();
+      file.offline = true;
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg('Failed to save file locally: ' + err.message);
+      setErrorMsg('Failed to save offline: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // Show toolbar when mouse enters the hot-zone at top; hide after leaving with a delay
+  const handleHotZoneEnter = useCallback(() => {
+    if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+    setToolbarVisible(true);
+  }, []);
+
+  const handleHotZoneLeave = useCallback(() => {
+    // Keep toolbar open if a side panel is open
+    if (isDisplayOpen || isSettingsOpen) return;
+    hideTimerRef.current = window.setTimeout(() => setToolbarVisible(false), 600);
+  }, [isDisplayOpen, isSettingsOpen]);
+
+  // Keep toolbar visible while a panel is open
+  useEffect(() => {
+    if (isDisplayOpen || isSettingsOpen) {
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+      setToolbarVisible(true);
+    }
+  }, [isDisplayOpen, isSettingsOpen]);
+
   // Keyboard Navigation & Bluetooth turn pedals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Pedals send PageUp/PageDown, arrows, or space/enter
+      const isLandscape = containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : false;
+      const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
       switch (e.key) {
-        case 'ArrowRight':
-        case 'ArrowDown':
-        case 'PageDown':
-        case ' ':
-        case 'Enter':
+        case 'ArrowRight': case 'ArrowDown': case 'PageDown': case ' ': case 'Enter':
           e.preventDefault();
-          handlePageChange(Math.min(totalPages, currentPage + (appSettings.twoPageLandscape && containerRef.current?.offsetWidth! > containerRef.current?.offsetHeight! ? 2 : 1)));
-          resetControlsTimeout();
+          handlePageChange(Math.min(totalPages, currentPage + step));
           break;
-        case 'ArrowLeft':
-        case 'ArrowUp':
-        case 'PageUp':
+        case 'ArrowLeft': case 'ArrowUp': case 'PageUp':
           e.preventDefault();
-          handlePageChange(Math.max(1, currentPage - (appSettings.twoPageLandscape && containerRef.current?.offsetWidth! > containerRef.current?.offsetHeight! ? 2 : 1)));
-          resetControlsTimeout();
+          handlePageChange(Math.max(1, currentPage - step));
           break;
-        default:
-          break;
+        default: break;
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentPage, totalPages, appSettings.twoPageLandscape]);
 
-  // Touch screen tap zone navigation
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
-    
-    // Ignore taps inside toolbars or sidebar panels
     const target = e.target as HTMLElement;
-    if (target.closest('.glass-panel') || target.closest('.sidebar-control-panel') || target.closest('button') || target.closest('input')) {
-      return;
-    }
+    if (target.closest('.sidebar-control-panel') || target.closest('.md-top-bar') || target.closest('button') || target.closest('input')) return;
 
     const { clientX } = e;
-    const { offsetWidth } = containerRef.current;
+    const { offsetWidth, offsetHeight } = containerRef.current;
     const boundary = (appSettings.tapZoneWidth / 100) * offsetWidth;
-
-    const isLandscapeLayout = offsetWidth > containerRef.current.offsetHeight;
-    const stepSize = (appSettings.twoPageLandscape && isLandscapeLayout) ? 2 : 1;
+    const step = (appSettings.twoPageLandscape && offsetWidth > offsetHeight) ? 2 : 1;
 
     if (clientX < boundary) {
-      // Tap Left -> Previous page
-      handlePageChange(Math.max(1, currentPage - stepSize));
-      resetControlsTimeout();
+      handlePageChange(Math.max(1, currentPage - step));
     } else if (clientX > offsetWidth - boundary) {
-      // Tap Right -> Next page
-      handlePageChange(Math.min(totalPages, currentPage + stepSize));
-      resetControlsTimeout();
-    } else {
-      // Tap Center -> Toggle interface controls
-      setShowControls((prev) => !prev);
+      handlePageChange(Math.min(totalPages, currentPage + step));
     }
-  };
-
-  // Mouse Move listener to auto show/hide controls
-  const handleMouseMove = () => {
-    if (!showControls) {
-      setShowControls(true);
-    }
-    resetControlsTimeout();
-  };
-
-  // Timer to autohide controls
-  const resetControlsTimeout = () => {
-    if (controlsTimeoutRef.current) {
-      window.clearTimeout(controlsTimeoutRef.current);
-    }
-
-    if (!appSettings.autoHideControls || isDisplayOpen || isSettingsOpen) {
-      return;
-    }
-
-    controlsTimeoutRef.current = window.setTimeout(() => {
-      setShowControls(false);
-    }, 3500);
   };
 
   // Handle Preset updates
@@ -242,13 +204,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     });
   };
 
-  // Trigger settings adjustments
   const handleSettingsChangeLocal = (newSettings: AppSettings) => {
     onSettingsChange(newSettings);
-    // If autohide was toggled off, make sure controls show up
-    if (!newSettings.autoHideControls) {
-      setShowControls(true);
-    }
   };
 
   // Dynamically map CSS filter values
@@ -285,27 +242,25 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   if (loading && !pdfDoc) {
     return (
-      <div className="page-container bg-slate-950 flex flex-col items-center justify-center text-white h-screen gap-4">
-        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="text-slate-400 text-sm font-semibold font-display">Opening music score...</p>
+      <div className="page-container flex flex-col items-center justify-center h-screen gap-4"
+        style={{ background: 'var(--md-surface)', color: 'var(--md-on-surface-variant)' }}>
+        <Loader2 className="w-10 h-10 animate-spin" style={{ color: 'var(--md-primary)' }} />
+        <p className="text-sm font-medium">Opening score…</p>
       </div>
     );
   }
 
   if (errorMsg) {
     return (
-      <div className="page-container bg-slate-950 flex flex-col items-center justify-center text-white h-screen p-6 text-center gap-6">
-        <AlertTriangle className="w-16 h-16 text-rose-500" />
-        <div className="space-y-2 max-w-md">
-          <h2 className="text-xl font-bold font-display">Failed to Open PDF</h2>
-          <p className="text-slate-400 text-sm">{errorMsg}</p>
+      <div className="page-container flex flex-col items-center justify-center h-screen p-6 text-center gap-6"
+        style={{ background: 'var(--md-surface)', color: 'var(--md-on-surface)' }}>
+        <AlertTriangle className="w-12 h-12" style={{ color: 'var(--md-error)' }} />
+        <div className="max-w-md">
+          <h2 className="text-lg font-bold mb-2">Failed to open PDF</h2>
+          <p className="text-sm" style={{ color: 'var(--md-on-surface-variant)' }}>{errorMsg}</p>
         </div>
-        <button
-          onClick={onBack}
-          className="btn btn-secondary flex items-center gap-2"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Library
+        <button onClick={onBack} className="md-btn-tonal flex items-center gap-2">
+          <ArrowLeft className="w-4 h-4" /> Back to Library
         </button>
       </div>
     );
@@ -314,62 +269,48 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleMouseMove}
       onClick={handleScreenTap}
-      className="page-container relative w-full h-screen overflow-hidden select-none bg-slate-950"
+      className="page-container relative w-full h-screen overflow-hidden select-none"
+      style={{ background: '#111' }}
     >
-      {/* Dynamic Global Ink Filter */}
       <SvgFilters inkDarkness={filters.inkDarkness} />
 
-      {/* Header Toolbar */}
+      {/* Invisible hover hot-zone at top — triggers toolbar */}
       <div
-        className={`absolute top-0 left-0 right-0 z-40 transition-all duration-300 transform ${
-          showControls ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none'
-        }`}
+        className="absolute top-0 left-0 right-0 z-50"
+        style={{ height: 56 }}
+        onMouseEnter={handleHotZoneEnter}
+        onMouseLeave={handleHotZoneLeave}
       >
-        <ViewerToolbar
-          file={file}
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-          onBack={onBack}
-          onToggleDisplay={() => {
-            setIsDisplayOpen(!isDisplayOpen);
-            setIsSettingsOpen(false);
-            resetControlsTimeout();
-          }}
-          onToggleSettings={() => {
-            setIsSettingsOpen(!isSettingsOpen);
-            setIsDisplayOpen(false);
-            resetControlsTimeout();
-          }}
-          isDisplayOpen={isDisplayOpen}
-          isSettingsOpen={isSettingsOpen}
-          onSaveOffline={handleSaveOffline}
-        />
-      </div>
-
-      {/* PDF Viewport Layer */}
-      <div
-        className="w-full h-full relative"
-        style={
-          {
-            '--pdf-bg': filters.backgroundColor,
-            '--pdf-mix-blend': 'multiply'
-          } as React.CSSProperties
-        }
-      >
-        {/* Warm Overlay Element */}
-        <div style={tintStyle} />
-
-        {/* Inner viewport container applying CSS Filters */}
+        {/* Toolbar slides in/out within hot-zone */}
         <div
-          className="w-full h-full"
           style={{
-            filter: cssFilterString,
-            transition: 'filter var(--transition-fast)'
+            transform: toolbarVisible ? 'translateY(0)' : 'translateY(-100%)',
+            opacity: toolbarVisible ? 1 : 0,
+            transition: 'transform 200ms ease, opacity 200ms ease',
+            pointerEvents: toolbarVisible ? 'auto' : 'none',
           }}
         >
+          <ViewerToolbar
+            file={file}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+            onBack={onBack}
+            onToggleDisplay={() => { setIsDisplayOpen(p => !p); setIsSettingsOpen(false); }}
+            onToggleSettings={() => { setIsSettingsOpen(p => !p); setIsDisplayOpen(false); }}
+            isDisplayOpen={isDisplayOpen}
+            isSettingsOpen={isSettingsOpen}
+            onSaveOffline={handleSaveOffline}
+          />
+        </div>
+      </div>
+
+      {/* PDF viewport */}
+      <div className="w-full h-full relative"
+        style={{ '--pdf-bg': filters.backgroundColor, '--pdf-mix-blend': 'multiply' } as React.CSSProperties}>
+        <div style={tintStyle} />
+        <div className="w-full h-full" style={{ filter: cssFilterString, transition: 'filter 150ms' }}>
           {pdfDoc && (
             <PdfViewer
               pdfDoc={pdfDoc}
@@ -384,11 +325,18 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         </div>
       </div>
 
-      {/* Display Controls Sidebar */}
+      {/* Display Controls sidebar */}
       <div
-        className={`sidebar-control-panel absolute right-0 top-[65px] bottom-0 w-80 glass-panel z-30 transition-transform duration-300 transform border-l border-white/10 p-5 ${
-          isDisplayOpen && showControls ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className="sidebar-control-panel absolute right-0 bottom-0 z-30 overflow-y-auto"
+        style={{
+          top: 64,
+          width: 288,
+          background: 'var(--md-surface-2)',
+          borderLeft: '1px solid var(--md-outline-variant)',
+          padding: '16px',
+          transform: isDisplayOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 250ms ease',
+        }}
       >
         <DisplayControls
           filters={filters}
@@ -398,27 +346,34 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         />
       </div>
 
-      {/* App Settings Sidebar */}
+      {/* Settings sidebar */}
       <div
-        className={`sidebar-control-panel absolute right-0 top-[65px] bottom-0 w-80 glass-panel z-30 transition-transform duration-300 transform border-l border-white/10 p-5 ${
-          isSettingsOpen && showControls ? 'translate-x-0' : 'translate-x-full'
-        }`}
+        className="sidebar-control-panel absolute right-0 bottom-0 z-30 overflow-y-auto"
+        style={{
+          top: 64,
+          width: 288,
+          background: 'var(--md-surface-2)',
+          borderLeft: '1px solid var(--md-outline-variant)',
+          padding: '16px',
+          transform: isSettingsOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 250ms ease',
+        }}
       >
         <SettingsPanel
           settings={appSettings}
           onChange={handleSettingsChangeLocal}
-          onClose={() => {
-            setIsSettingsOpen(false);
-            resetControlsTimeout();
-          }}
+          onClose={() => setIsSettingsOpen(false)}
         />
       </div>
 
-      {/* Floating Page Number Indicator (shown when controls are hidden) */}
+      {/* Page indicator — always visible, bottom center */}
       <div
-        className={`absolute bottom-4 left-1/2 transform -translate-x-1/2 px-3 py-1.5 rounded-full text-xs font-semibold glass-panel text-slate-300 border border-white/5 transition-opacity duration-300 pointer-events-none ${
-          !showControls ? 'opacity-80' : 'opacity-0'
-        }`}
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold pointer-events-none"
+        style={{
+          background: 'rgba(0,0,0,0.5)',
+          color: 'rgba(255,255,255,0.6)',
+          backdropFilter: 'none',
+        }}
       >
         {currentPage} / {totalPages}
       </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileUp, HardDrive, Chrome, Trash2, CloudLightning, FileText, CheckCircle2, Download, AlertCircle } from 'lucide-react';
+import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi } from 'lucide-react';
 import { storageService, type ScoreFile } from '../services/storageService';
-import { googleDriveService } from '../services/googleDriveService';
+import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
+import { DriveFileBrowser } from './DriveFileBrowser';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 interface LibraryPageProps {
@@ -13,28 +14,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'local' | 'drive'>('all');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDriveBrowser, setShowDriveBrowser] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isOnline = useNetworkStatus();
-
-  // Check if Google Drive environment vars are configured
   const isGoogleConfigured = googleDriveService.isConfigured();
 
-  useEffect(() => {
-    loadFiles();
-  }, []);
+  useEffect(() => { loadFiles(); }, []);
 
   const loadFiles = async () => {
     try {
       const allFiles = await storageService.getFiles();
       setFiles(allFiles);
     } catch (e) {
-      console.error('Failed to load files from db', e);
       setErrorMsg('Failed to initialize database.');
     }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
   };
 
   const processLocalFile = async (file: File) => {
@@ -42,12 +35,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       setErrorMsg('Only PDF files are supported.');
       return;
     }
-
     setLoading(true);
     setErrorMsg(null);
-
     try {
-      // Create metadata
       const fileId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newFile: ScoreFile = {
         id: fileId,
@@ -55,151 +45,115 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         source: 'local',
         lastOpened: Date.now(),
         lastPage: 1,
-        offline: false, // temporarily opened, not yet cached in db
+        offline: false,
         size: file.size
       };
-
-      // Add temporarily to library view (metadata saved but blob not cached yet)
       await storageService.saveFileMetadata(newFile);
-      
-      // Auto refresh files list
       await loadFiles();
       setLoading(false);
-      
-      // Open immediately in viewer
       onOpenFile(newFile, file);
     } catch (e: any) {
-      console.error(e);
-      setErrorMsg('Failed to parse and load PDF.');
+      setErrorMsg('Failed to load PDF.');
       setLoading(false);
     }
   };
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      await processLocalFile(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files?.length > 0) await processLocalFile(e.dataTransfer.files[0]);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      await processLocalFile(e.target.files[0]);
-    }
+    if (e.target.files && e.target.files.length > 0) await processLocalFile(e.target.files[0]);
   };
 
   const handleGoogleDrivePick = async () => {
     if (!isGoogleConfigured) {
-      setErrorMsg('Google Drive integration is not configured. Please add VITE_GOOGLE_CLIENT_ID, VITE_GOOGLE_API_KEY, and VITE_GOOGLE_APP_ID to your environment variables.');
+      setErrorMsg('Add VITE_GOOGLE_CLIENT_ID to .env.local to enable Google Drive.');
       return;
     }
     if (!isOnline) {
       setErrorMsg('You must be online to open files from Google Drive.');
       return;
     }
-
     setLoading(true);
     setErrorMsg(null);
-
-    googleDriveService.pickPdf(
-      async (metadata) => {
-        try {
-          // Check if file is already in library
-          const existing = files.find(f => f.id === metadata.id);
-          
-          if (existing) {
-            // Already opened, just update time and open
-            existing.lastOpened = Date.now();
-            await storageService.saveFileMetadata(existing);
-            await loadFiles();
-            setLoading(false);
-            
-            // If already cached offline, open it, otherwise download in-memory first
-            if (existing.offline) {
-              onOpenFile(existing);
-            } else {
-              const blob = await googleDriveService.downloadFile(existing.id);
-              onOpenFile(existing, blob);
-            }
-            return;
-          }
-
-          // New file metadata
-          const newFile: ScoreFile = {
-            id: metadata.id,
-            name: metadata.name.replace(/\.pdf$/i, ''),
-            source: 'google-drive',
-            lastOpened: Date.now(),
-            lastPage: 1,
-            offline: false, // download to memory first
-            size: metadata.size,
-            thumbnail: metadata.thumbnailLink
-          };
-
-          await storageService.saveFileMetadata(newFile);
-          await loadFiles();
-
-          // Download file bytes
-          const blob = await googleDriveService.downloadFile(newFile.id);
-          setLoading(false);
-          onOpenFile(newFile, blob);
-        } catch (e: any) {
-          console.error(e);
-          setErrorMsg('Failed to load file from Google Drive: ' + e.message);
-          setLoading(false);
-        }
-      },
-      (err) => {
-        console.error(err);
-        setErrorMsg(err.message || 'Google Drive picker failed.');
-        setLoading(false);
-      }
-    );
+    try {
+      await googleDriveService.getAccessToken();
+      setShowDriveBrowser(true);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Google sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Toggle offline cache for a file
+  const handleDriveFileSelected = async (metadata: GoogleDriveFileMetadata) => {
+    setShowDriveBrowser(false);
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const existing = files.find(f => f.id === metadata.id);
+      if (existing) {
+        existing.lastOpened = Date.now();
+        await storageService.saveFileMetadata(existing);
+        await loadFiles();
+        setLoading(false);
+        if (existing.offline) {
+          onOpenFile(existing);
+        } else {
+          const blob = await googleDriveService.downloadFile(existing.id);
+          onOpenFile(existing, blob);
+        }
+        return;
+      }
+      const newFile: ScoreFile = {
+        id: metadata.id,
+        name: metadata.name.replace(/\.pdf$/i, ''),
+        source: 'google-drive',
+        lastOpened: Date.now(),
+        lastPage: 1,
+        offline: false,
+        size: metadata.size,
+        thumbnail: metadata.thumbnailLink
+      };
+      await storageService.saveFileMetadata(newFile);
+      await loadFiles();
+      const blob = await googleDriveService.downloadFile(newFile.id);
+      setLoading(false);
+      onOpenFile(newFile, blob);
+    } catch (e: any) {
+      setErrorMsg('Failed to load from Google Drive: ' + e.message);
+      setLoading(false);
+    }
+  };
+
   const toggleOfflineCache = async (file: ScoreFile, e: React.MouseEvent) => {
     e.stopPropagation();
     setErrorMsg(null);
-
     if (file.offline) {
-      // Remove from cache
       try {
         await storageService.removeFileFromOffline(file.id);
         await loadFiles();
-      } catch (err) {
-        console.error(err);
-        setErrorMsg('Failed to remove file from cache.');
-      }
+      } catch { setErrorMsg('Failed to remove from cache.'); }
     } else {
-      // Cache offline
       setLoading(true);
       try {
-        let blob: Blob | null = null;
         if (file.source === 'local') {
-          // For local files, we prompt them to pick the file again to cache it,
-          // or if they are currently viewing we save it.
-          // Since they are inside LibraryPage and want to toggle offline, they must pick the local file to save it.
-          setErrorMsg('To save a local file for offline use, open the file and click "Save for Offline" inside the reader view.');
+          setErrorMsg('Open the file in the viewer and click "Save for Offline" to cache local files.');
           setLoading(false);
           return;
-        } else {
-          // Google Drive file
-          if (!isOnline) {
-            setErrorMsg('You must be online to cache Google Drive files.');
-            setLoading(false);
-            return;
-          }
-          blob = await googleDriveService.downloadFile(file.id);
         }
-
-        if (blob) {
-          await storageService.cacheFileOffline(file, blob);
-          await loadFiles();
+        if (!isOnline) {
+          setErrorMsg('You must be online to cache Google Drive files.');
+          setLoading(false);
+          return;
         }
+        const blob = await googleDriveService.downloadFile(file.id);
+        await storageService.cacheFileOffline(file, blob);
+        await loadFiles();
       } catch (err: any) {
-        console.error(err);
-        setErrorMsg('Failed to cache file: ' + err.message);
+        setErrorMsg('Failed to cache: ' + err.message);
       } finally {
         setLoading(false);
       }
@@ -208,33 +162,22 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
   const deleteFileRecord = async (fileId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Are you sure you want to remove this file from your library?')) {
+    if (confirm('Remove this score from your library?')) {
       try {
         await storageService.deleteFile(fileId);
         await loadFiles();
-      } catch (err) {
-        console.error(err);
-        setErrorMsg('Failed to delete file.');
-      }
+      } catch { setErrorMsg('Failed to remove file.'); }
     }
   };
 
   const formatSize = (bytes?: number) => {
-    if (!bytes) return 'Unknown size';
-    const kb = bytes / 1024;
-    if (kb < 1024) return `${kb.toFixed(1)} KB`;
-    const mb = kb / 1024;
-    return `${mb.toFixed(1)} MB`;
+    if (!bytes) return '';
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const formatDate = (ts: number) =>
+    new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const filteredFiles = files.filter(f => {
     if (activeTab === 'local') return f.source === 'local';
@@ -242,220 +185,228 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     return true;
   });
 
+  const tabs: { key: typeof activeTab; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'local', label: 'Local' },
+    { key: 'drive', label: 'Drive' },
+  ];
+
   return (
-    <div className="page-container bg-[#0a0a0c] text-white p-6 md:p-10 overflow-y-auto max-w-7xl mx-auto w-full">
-      {/* Header */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
-        <div>
-          <h1 className="text-4xl font-bold font-display tracking-tight text-white mb-2">ScoreTone</h1>
-          <p className="text-slate-400 text-sm">Offline-first digital music stand for musicians</p>
-        </div>
+    <div className="page-container overflow-y-auto" style={{ background: 'var(--md-surface)' }}>
+      <div className="max-w-5xl mx-auto w-full px-4 py-6 md:px-8 md:py-8">
 
-        {/* Network Status Badge */}
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-          <span className="text-xs font-semibold text-slate-400">
-            {isOnline ? 'Online mode' : 'Offline mode'}
-          </span>
-        </div>
-      </header>
-
-      {/* Error & Config Warning Display */}
-      {errorMsg && (
-        <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-sm flex items-start gap-3 animate-fade">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-          <div>{errorMsg}</div>
-        </div>
-      )}
-
-      {!isGoogleConfigured && (
-        <div className="mb-6 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-slate-300 text-sm flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-indigo-400 shrink-0" />
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between mb-8">
           <div>
-            <p className="font-semibold text-indigo-300 mb-1">Google Integration Available</p>
-            To connect with Google Drive, create a `.env.local` file with:
-            <code className="block mt-1 bg-slate-950 p-2 rounded text-xs select-all text-indigo-200">
-              VITE_GOOGLE_CLIENT_ID=your_id<br/>
-              VITE_GOOGLE_API_KEY=your_key<br/>
-              VITE_GOOGLE_APP_ID=your_project_number
-            </code>
+            <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
+              ScoreTone
+            </h1>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+              Digital music stand
+            </p>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
+            style={{
+              background: isOnline ? 'rgba(55,120,60,0.2)' : 'rgba(200,120,0,0.15)',
+              color: isOnline ? '#81C784' : 'var(--md-primary)',
+            }}>
+            {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
+            {isOnline ? 'Online' : 'Offline'}
           </div>
         </div>
-      )}
 
-      {/* Drop Zone Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Upload Panel */}
-        <div className="lg:col-span-1 space-y-6">
-          <h3 className="text-lg font-bold font-display text-slate-300">Add Music Scores</h3>
-          
-          <div
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-white/10 hover:border-indigo-500/50 rounded-2xl p-8 text-center cursor-pointer transition-all bg-white/5 flex flex-col items-center justify-center gap-4 group"
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              accept="application/pdf"
-              className="hidden"
-            />
-            <div className="w-14 h-14 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-indigo-600/10 group-hover:scale-110 transition-all">
-              <FileUp className="w-6 h-6 text-slate-400 group-hover:text-indigo-400" />
+        {/* ── Error banner ── */}
+        {errorMsg && (
+          <div className="flex items-start gap-3 mb-6 p-4 rounded-xl"
+            style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}>
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <span className="text-sm flex-1">{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)} className="text-xs opacity-70 hover:opacity-100 font-semibold">✕</button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
+
+          {/* ── Left panel: add scores ── */}
+          <div className="flex flex-col gap-4">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--md-on-surface-variant)' }}>
+              Add Score
+            </p>
+
+            {/* Drop zone */}
+            <div
+              onDragOver={e => e.preventDefault()}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center justify-center gap-3 p-8 rounded-2xl cursor-pointer transition-colors"
+              style={{
+                border: '2px dashed var(--md-outline-variant)',
+                background: 'var(--md-surface-1)',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--md-primary)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--md-outline-variant)')}
+            >
+              <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="application/pdf" className="hidden" />
+              <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: 'var(--md-primary-container)' }}>
+                <FileUp className="w-5 h-5" style={{ color: 'var(--md-on-primary-container)' }} />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-semibold" style={{ color: 'var(--md-on-surface)' }}>Drop a PDF here</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>or click to browse</p>
+              </div>
             </div>
-            <div>
-              <p className="font-semibold text-sm text-slate-200">Drag & Drop PDF Score</p>
-              <p className="text-xs text-slate-500 mt-1">or click to browse local files</p>
-            </div>
+
+            {/* Google Drive button */}
+            {isGoogleConfigured && (
+              <button
+                onClick={handleGoogleDrivePick}
+                disabled={loading || !isOnline}
+                className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold transition-colors"
+                style={{
+                  background: 'var(--md-surface-2)',
+                  color: 'var(--md-on-surface)',
+                  border: '1px solid var(--md-outline-variant)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-3)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
+              >
+                {/* Google Drive icon */}
+                <svg width="18" height="18" viewBox="0 0 87.3 78" fill="none">
+                  <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                  <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                  <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                  <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                  <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                  <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                </svg>
+                {loading ? 'Connecting…' : 'Open from Google Drive'}
+              </button>
+            )}
+
+            {loading && (
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>
+                <div className="w-4 h-4 rounded-full border-2 border-transparent animate-spin"
+                  style={{ borderTopColor: 'var(--md-primary)' }} />
+                Loading…
+              </div>
+            )}
           </div>
 
-          <button
-            onClick={handleGoogleDrivePick}
-            disabled={loading || (!isOnline && isGoogleConfigured)}
-            className="w-full flex items-center justify-center gap-3 py-4 rounded-xl border border-white/10 bg-[#121212] hover:bg-white/5 disabled:opacity-50 text-slate-200 font-semibold text-sm transition-all"
-          >
-            <Chrome className="w-5 h-5 text-indigo-400" />
-            Open from Google Drive
-          </button>
+          {/* ── Right panel: library ── */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--md-on-surface-variant)' }}>
+                My Library
+              </p>
 
-          {loading && (
-            <div className="flex items-center justify-center gap-3 py-2 text-xs text-indigo-400 font-semibold">
-              <span className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-              Processing score files...
+              {/* Tabs */}
+              <div className="flex rounded-full overflow-hidden" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
+                {tabs.map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className="px-4 py-1.5 text-xs font-semibold transition-colors"
+                    style={{
+                      background: activeTab === tab.key ? 'var(--md-primary-container)' : 'transparent',
+                      color: activeTab === tab.key ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          )}
-        </div>
 
-        {/* Library List Panel */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex justify-between items-center border-b border-white/10 pb-3">
-            <h3 className="text-lg font-bold font-display text-slate-300">My Score Library</h3>
-
-            {/* Filter Tabs */}
-            <div className="flex bg-white/5 rounded-lg p-0.5 border border-white/5">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setActiveTab('local')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  activeTab === 'local' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Local
-              </button>
-              <button
-                onClick={() => setActiveTab('drive')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  activeTab === 'drive' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Google Drive
-              </button>
-            </div>
-          </div>
-
-          {filteredFiles.length === 0 ? (
-            <div className="py-16 text-center text-slate-500 bg-white/5 border border-white/5 rounded-2xl flex flex-col items-center gap-3">
-              <FileText className="w-10 h-10 text-slate-600" />
-              <p className="text-sm font-semibold">Your music catalog is empty</p>
-              <p className="text-xs">Drag in local PDFs or import from Google Drive to get started.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredFiles.map((file) => (
-                <div
-                  key={file.id}
-                  onClick={() => onOpenFile(file)}
-                  className="glass-card p-4 flex gap-4 cursor-pointer relative items-start group select-none"
-                >
-                  {/* Thumbnail / Source representation */}
-                  <div className="w-16 h-20 rounded bg-slate-900 border border-white/10 shrink-0 flex items-center justify-center relative overflow-hidden">
-                    {file.thumbnail ? (
-                      <img src={file.thumbnail} alt={file.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <FileText className="w-8 h-8 text-slate-600" />
-                    )}
-                    
-                    {/* Badge representing Source */}
-                    <div
-                      className="absolute top-1 right-1 p-0.5 rounded bg-slate-950/80 border border-white/10"
-                      title={file.source === 'google-drive' ? 'Google Drive' : 'Local file'}
-                    >
+            {filteredFiles.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 rounded-2xl gap-3"
+                style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface-variant)' }}>
+                <FileText className="w-10 h-10 opacity-30" />
+                <p className="text-sm font-medium">No scores yet</p>
+                <p className="text-xs opacity-60">Drop a PDF or import from Google Drive</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {filteredFiles.map(file => (
+                  <div
+                    key={file.id}
+                    onClick={() => onOpenFile(file)}
+                    className="flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-colors group"
+                    style={{ background: 'var(--md-surface-1)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--md-surface-1)')}
+                  >
+                    {/* Icon */}
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'var(--md-surface-3)' }}>
                       {file.source === 'google-drive' ? (
-                        <Chrome className="w-3.5 h-3.5 text-indigo-400" />
+                        <svg width="20" height="20" viewBox="0 0 87.3 78" fill="none">
+                          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/>
+                          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/>
+                          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/>
+                          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/>
+                          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/>
+                          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/>
+                        </svg>
                       ) : (
-                        <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
+                        <HardDrive className="w-5 h-5" style={{ color: 'var(--md-on-surface-variant)' }} />
                       )}
                     </div>
-                  </div>
 
-                  {/* Details */}
-                  <div className="flex-1 min-w-0 pr-8">
-                    <h4 className="font-semibold text-sm text-slate-100 truncate group-hover:text-indigo-400 transition-colors">
-                      {file.name}
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                      <span>{formatSize(file.size)}</span>
-                      <span>•</span>
-                      <span>Page {file.lastPage}</span>
-                    </p>
-                    <p className="text-[10px] text-slate-600 mt-2">
-                      Opened {formatDate(file.lastOpened)}
-                    </p>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>
+                        {file.name}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+                        {[formatSize(file.size), `p.${file.lastPage}`, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
 
-                    {/* Cache & Offline Status Indicator */}
-                    <div className="flex items-center gap-1.5 mt-3">
+                    {/* Offline chip */}
+                    <div className="flex items-center gap-1">
                       {file.offline ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/15">
-                          <CheckCircle2 className="w-3 h-3" /> Saved Offline
+                        <span className="md-chip md-chip-success">
+                          <CheckCircle2 className="w-3 h-3" /> Offline
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/15">
-                          <CloudLightning className="w-3 h-3" /> Temporary (Online)
-                        </span>
+                        <span className="md-chip md-chip-warning">Online</span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Actions overlay */}
-                  <div className="absolute right-3 top-3 flex flex-col gap-1">
-                    {/* Cache offline control */}
-                    <button
-                      onClick={(e) => toggleOfflineCache(file, e)}
-                      className={`p-1.5 rounded-lg border transition-colors ${
-                        file.offline
-                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-400'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                      }`}
-                      title={file.offline ? "Remove from offline cache" : "Save for offline use"}
-                    >
-                      {file.offline ? <Trash2 className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                    </button>
-
-                    {/* Delete record control */}
-                    <button
-                      onClick={(e) => deleteFileRecord(file.id, e)}
-                      className="p-1.5 rounded-lg border border-white/5 bg-white/5 text-slate-400 hover:bg-rose-500/10 hover:border-rose-500/20 hover:text-rose-400 transition-colors"
-                      title="Remove from library"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={e => toggleOfflineCache(file, e)}
+                        className="md-icon-btn"
+                        title={file.offline ? 'Remove offline cache' : 'Save offline'}
+                        style={{ width: 32, height: 32 }}
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={e => deleteFileRecord(file.id, e)}
+                        className="md-icon-btn"
+                        title="Remove from library"
+                        style={{ width: 32, height: 32 }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {showDriveBrowser && (
+        <DriveFileBrowser
+          onSelect={handleDriveFileSelected}
+          onClose={() => setShowDriveBrowser(false)}
+        />
+      )}
     </div>
   );
 };
