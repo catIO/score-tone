@@ -311,7 +311,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       {/* Invisible hover hot-zone at top — triggers toolbar */}
       <div
         className="absolute top-0 left-0 right-0 z-50"
-        style={{ height: 56 }}
+        style={{ height: '20vh' }}
         onMouseEnter={handleHotZoneEnter}
         onMouseLeave={handleHotZoneLeave}
       >
