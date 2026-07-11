@@ -20,12 +20,37 @@ let tokenClient: any = null;
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 export const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID || '';
 
+// Helper to dynamically load the Google Identity Services library on-demand
+function loadGsiScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.google?.accounts?.oauth2) {
+      resolve();
+      return;
+    }
+    // Check if script is already in the document
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity Services.')));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google Identity Services.'));
+    document.head.appendChild(script);
+  });
+}
+
 export const googleDriveService = {
   isConfigured(): boolean {
     return !!CLIENT_ID;
   },
 
-  // Initialize Google OAuth2 Token Client (no gapi/picker needed)
+  // Initialize Google OAuth2 Token Client (no picker needed)
   initTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void): void {
     if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
       onError(new Error('Google Identity Services client not loaded.'));
@@ -35,8 +60,6 @@ export const googleDriveService = {
     try {
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        // drive.readonly: lets us list + download any Drive file.
-        // Works for test-mode users without Google verification.
         scope: 'https://www.googleapis.com/auth/drive.readonly',
         callback: (response: any) => {
           if (response.error) {
@@ -52,11 +75,13 @@ export const googleDriveService = {
     }
   },
 
-  // Trigger Auth Token Flow
+  // Trigger Auth Token Flow (now dynamically loading script first)
   async getAccessToken(): Promise<string> {
     if (accessToken) {
       return accessToken;
     }
+
+    await loadGsiScript();
 
     return new Promise((resolve, reject) => {
       this.initTokenClient(
