@@ -18,36 +18,22 @@ export default defineConfig({
         orientation: 'any',
         icons: [
           {
-            src: 'favicon.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml'
-          },
-          {
-            src: 'masked-icon.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          },
-          {
             src: 'icons/icon-192x192.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           },
           {
             src: 'icons/icon-512x512.png',
             sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           },
           {
             src: 'icons/icon-mac.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
-          },
-          {
-            src: 'icons/apple-touch-icon.png',
-            sizes: '180x180',
-            type: 'image/png'
           }
         ]
       },
