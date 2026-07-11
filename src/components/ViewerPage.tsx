@@ -9,6 +9,7 @@ import PdfViewer from './PdfViewer';
 import DisplayControls from './DisplayControls';
 import SettingsPanel from './SettingsPanel';
 import SvgFilters from './SvgFilters';
+import { googleDriveService } from '../services/googleDriveService';
 
 interface ViewerPageProps {
   file: ScoreFile;
@@ -67,12 +68,16 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         }
 
         if (!pdfData) {
-          // If not in DB and no inMemoryBlob, we can try using the file.id as URL (fallback case)
-          if (file.source === 'local') {
+          // 3. Fallback: If it's a Google Drive file, try to download it on-the-fly
+          if (file.source === 'google-drive') {
+            pdfData = await googleDriveService.downloadFile(file.id);
+          } else if (file.source === 'local') {
             throw new Error('Local temporary file has expired. Please reload it from the library.');
-          } else {
-            throw new Error('This file has not been saved for offline use. Return to Library and connect to Google Drive.');
           }
+        }
+
+        if (!pdfData) {
+          throw new Error('Could not retrieve file content.');
         }
 
         const doc = await pdfService.loadDocument(pdfData);

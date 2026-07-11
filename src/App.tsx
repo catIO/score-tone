@@ -17,16 +17,51 @@ export const App: React.FC = () => {
   // Pending deep-link: stored until user clicks a button (needed for popup unblock)
   const [pendingLink, setPendingLink] = useState<{ driveId: string; name: string } | null>(null);
 
-  // On mount: detect a shared link in the URL but don't trigger OAuth automatically
-  useEffect(() => {
+  // Parse location and sync UI state with URL parameters
+  const syncStateWithUrl = async () => {
     const params = new URLSearchParams(window.location.search);
+    const viewId = params.get('view');
     const driveId = params.get('driveId');
     const name = params.get('name') || 'Shared Score';
-    if (driveId) {
-      // Clear the URL immediately so refreshing doesn't re-trigger
-      window.history.replaceState({}, document.title, window.location.origin);
-      setPendingLink({ driveId, name });
+
+    const targetId = viewId || driveId;
+
+    if (targetId) {
+      try {
+        const filesList = await storageService.getFiles();
+        const existing = filesList.find((f) => f.id === targetId);
+
+        if (existing) {
+          const cachedBlob = await storageService.getFileData(targetId);
+          // Open the file. If cachedBlob is undefined, the ViewerPage fallback will download it.
+          setActiveFile(existing);
+          setInMemoryBlob(cachedBlob || undefined);
+          setActivePage('viewer');
+        } else {
+          // If not in our library list, treat it as a shared score link
+          setPendingLink({ driveId: targetId, name });
+        }
+      } catch (e) {
+        console.error('[ScoreTone] Failed to parse URL parameters', e);
+      }
+    } else {
+      // No file active: go back to library
+      setActivePage('library');
+      setActiveFile(null);
+      setInMemoryBlob(undefined);
     }
+  };
+
+  // Sync state on initial mount & listen to back/forward navigation
+  useEffect(() => {
+    syncStateWithUrl();
+
+    const handlePopState = () => {
+      syncStateWithUrl();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   const importSharedScore = async (driveId: string, shareName: string) => {
@@ -47,7 +82,7 @@ export const App: React.FC = () => {
         }
       }
 
-      // Triggers OAuth popup — safe here because user just clicked a button
+      // Triggers OAuth popup
       const blob = await googleDriveService.downloadFile(driveId);
 
       const newFile: ScoreFile = {
@@ -79,15 +114,31 @@ export const App: React.FC = () => {
     setActiveFile(file);
     setInMemoryBlob(blob);
     setActivePage('viewer');
+
+    // Update URL history to reflect the current score view (without reloading)
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') !== file.id) {
+      window.history.pushState(
+        { page: 'viewer', fileId: file.id },
+        '',
+        `?view=${file.id}`
+      );
+    }
   };
 
   const handleBackToLibrary = () => {
     setActivePage('library');
     setActiveFile(null);
     setInMemoryBlob(undefined);
+
+    // Update URL history to main library path
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') || params.get('driveId')) {
+      window.history.pushState({ page: 'library' }, '', window.location.origin);
+    }
   };
 
-  // Loading spinner while downloading
+  // Loading spinner while downloading PWA assets or importing
   if (importing) {
     return (
       <div className="w-screen h-screen flex flex-col items-center justify-center bg-[#0a0a0c] text-white gap-4">
