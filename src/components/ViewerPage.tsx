@@ -39,8 +39,13 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Active filter state
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
   const [presetName, setPresetName] = useState<string>(appSettings.lastPreset);
+  const [zoom, setZoom] = useState<number>(1.0);
 
   const hideTimerRef = useRef<number | null>(null);
+
+  const zoomIn = useCallback(() => setZoom(z => Math.min(3.0, z + 0.1)), []);
+  const zoomOut = useCallback(() => setZoom(z => Math.max(0.6, z - 0.1)), []);
+  const zoomReset = useCallback(() => setZoom(1.0), []);
 
   // Load PDF file on mount
   useEffect(() => {
@@ -153,12 +158,24 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           e.preventDefault();
           handlePageChange(Math.max(1, currentPage - step));
           break;
+        case '+': case '=':
+          e.preventDefault();
+          zoomIn();
+          break;
+        case '-':
+          e.preventDefault();
+          zoomOut();
+          break;
+        case '0':
+          e.preventDefault();
+          zoomReset();
+          break;
         default: break;
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage, totalPages, appSettings.twoPageLandscape]);
+  }, [currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -302,6 +319,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             isDisplayOpen={isDisplayOpen}
             isSettingsOpen={isSettingsOpen}
             onSaveOffline={handleSaveOffline}
+            zoom={zoom}
+            onZoomIn={zoomIn}
+            onZoomOut={zoomOut}
+            onZoomReset={zoomReset}
           />
         </div>
       </div>
@@ -320,6 +341,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               scrollMode={appSettings.scrollMode}
               twoPageLandscape={appSettings.twoPageLandscape}
               onTotalPages={setTotalPages}
+              zoom={zoom}
             />
           )}
         </div>

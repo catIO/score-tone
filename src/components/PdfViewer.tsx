@@ -11,6 +11,7 @@ interface PdfViewerProps {
   scrollMode: 'single' | 'continuous';
   twoPageLandscape: boolean;
   onTotalPages: (total: number) => void;
+  zoom: number;
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -20,7 +21,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   fitMode,
   scrollMode,
   twoPageLandscape,
-  onTotalPages
+  onTotalPages,
+  zoom
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 1000 });
@@ -75,11 +77,11 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const availableHeight = containerSize.height - gap * 2;
 
     if (fitMode === 'width') {
-      return availableWidth / pageSize.width;
+      return (availableWidth / pageSize.width) * zoom;
     } else {
-      return availableHeight / pageSize.height;
+      return (availableHeight / pageSize.height) * zoom;
     }
-  }, [pageSize, containerSize, fitMode, isTwoPageActive]);
+  }, [pageSize, containerSize, fitMode, isTwoPageActive, zoom]);
 
   // Handle intersection observer scroll updates for continuous scrolling
   useEffect(() => {
@@ -130,7 +132,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     // Estimate aspect ratio to prevent layouts shifting on lazy rendering
     const size = pageSizes[pageNum] || pageSize || { width: 612, height: 792, aspectRatio: 0.77 };
-    const width = fitMode === 'width' ? containerSize.width - 64 : (containerSize.height - 64) * size.aspectRatio;
+    const width = (fitMode === 'width' ? containerSize.width - 64 : (containerSize.height - 64) * size.aspectRatio) * zoom;
     const height = width / size.aspectRatio;
 
     return (
@@ -159,16 +161,21 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full overflow-auto flex select-none ${
-        scrollMode === 'single' ? 'items-center justify-center' : 'flex-col items-center'
-      }`}
+      className="w-full h-full overflow-auto flex flex-col select-none"
       style={{
         backgroundColor: 'var(--pdf-bg)',
         transition: 'background-color var(--transition-md)'
       }}
     >
       {scrollMode === 'single' ? (
-        <div className="flex gap-8 justify-center items-center py-6 px-4">
+        <div 
+          className="flex gap-8 py-6 px-4"
+          style={{
+            margin: 'auto', // Centers when page fits, aligns to top-left when zoomed/overflowing so all parts can be scrolled to
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
           <PdfPageCanvas
             pdfDoc={pdfDoc}
             pageNumber={currentPage}

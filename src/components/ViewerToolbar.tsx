@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Sliders, Settings, Maximize2, Minimize2, Check, Save, Share2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Sliders, Settings, Maximize2, Minimize2, Check, Save, Share2, ZoomIn, ZoomOut } from 'lucide-react';
 import type { ScoreFile } from '../services/storageService';
 
 interface ViewerToolbarProps {
@@ -13,6 +13,10 @@ interface ViewerToolbarProps {
   isDisplayOpen: boolean;
   isSettingsOpen: boolean;
   onSaveOffline: () => void;
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onZoomReset: () => void;
 }
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
@@ -20,7 +24,8 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   onPageChange, onBack,
   onToggleDisplay, onToggleSettings,
   isDisplayOpen, isSettingsOpen,
-  onSaveOffline
+  onSaveOffline,
+  zoom, onZoomIn, onZoomOut, onZoomReset
 }) => {
   const [jumpPage, setJumpPage] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -119,6 +124,38 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 
       {/* Right: actions */}
       <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+        {/* Zoom controls */}
+        <button
+          onClick={onZoomOut}
+          disabled={zoom <= 0.6}
+          className="md-icon-btn disabled:opacity-30"
+          title="Zoom out"
+          style={{ width: 36, height: 36 }}
+        >
+          <ZoomOut className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={onZoomReset}
+          className="text-xs font-semibold px-1 py-1 rounded transition-colors hover:bg-white/10"
+          style={{ color: 'var(--md-primary)', minWidth: 40, textAlign: 'center' }}
+          title="Reset zoom to 100%"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+
+        <button
+          onClick={onZoomIn}
+          disabled={zoom >= 3.0}
+          className="md-icon-btn disabled:opacity-30"
+          title="Zoom in"
+          style={{ width: 36, height: 36 }}
+        >
+          <ZoomIn className="w-4 h-4" />
+        </button>
+
+        <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
+
         {file.source === 'google-drive' && (
           <button
             onClick={handleShare}

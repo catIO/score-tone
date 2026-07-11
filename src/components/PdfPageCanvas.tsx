@@ -66,7 +66,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
           {error}
         </div>
       )}
-      <canvas ref={canvasRef} className="max-w-full block" />
+      <canvas ref={canvasRef} className="block" />
     </div>
   );
 };
