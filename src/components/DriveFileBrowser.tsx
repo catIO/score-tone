@@ -3,11 +3,12 @@ import { googleDriveService, GoogleDriveFileMetadata } from '../services/googleD
 import { FileText, X, CheckCircle2, Search } from 'lucide-react';
 
 interface DriveFileBrowserProps {
+  token: string; // already-acquired access token — avoids redundant getAccessToken() calls
   onSelect: (file: GoogleDriveFileMetadata) => void;
   onClose: () => void;
 }
 
-export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, onClose }) => {
+export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSelect, onClose }) => {
   const [files, setFiles] = useState<GoogleDriveFileMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,6 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
       setLoading(true);
       setError(null);
       setSelected(null);
-      const token = await googleDriveService.getAccessToken();
       const result = await googleDriveService.listPdfFiles(token, undefined, searchQuery);
       setFiles(result.files);
       setNextPageToken(result.nextPageToken);
@@ -37,13 +37,12 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ onSelect, on
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   const loadMore = async () => {
     if (!nextPageToken) return;
     try {
       setLoadingMore(true);
-      const token = await googleDriveService.getAccessToken();
       const result = await googleDriveService.listPdfFiles(token, nextPageToken, activeSearch);
       setFiles(prev => [...prev, ...result.files]);
       setNextPageToken(result.nextPageToken);

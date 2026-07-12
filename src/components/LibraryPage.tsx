@@ -15,6 +15,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showDriveBrowser, setShowDriveBrowser] = useState(false);
+  const [driveToken, setDriveToken] = useState<string | null>(
+    () => googleDriveService.getCachedToken()
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isOnline = useNetworkStatus();
   const isGoogleConfigured = googleDriveService.isConfigured();
@@ -79,7 +82,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      await googleDriveService.getAccessToken();
+      const token = await googleDriveService.getAccessToken();
+      setDriveToken(token);
       setShowDriveBrowser(true);
     } catch (err: any) {
       setErrorMsg(err.message || 'Google sign-in failed.');
@@ -93,6 +97,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     setLoading(true);
     setErrorMsg(null);
     try {
+      const token = driveToken || await googleDriveService.getAccessToken();
       const existing = files.find(f => f.id === metadata.id);
       if (existing) {
         existing.lastOpened = Date.now();
@@ -102,7 +107,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         if (existing.offline) {
           onOpenFile(existing);
         } else {
-          const blob = await googleDriveService.downloadFile(existing.id);
+          const blob = await googleDriveService.downloadFile(existing.id, token);
           onOpenFile(existing, blob);
         }
         return;
@@ -119,7 +124,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       };
       await storageService.saveFileMetadata(newFile);
       await loadFiles();
-      const blob = await googleDriveService.downloadFile(newFile.id);
+      const blob = await googleDriveService.downloadFile(newFile.id, token);
       setLoading(false);
       onOpenFile(newFile, blob);
     } catch (e: any) {
@@ -149,7 +154,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
           setLoading(false);
           return;
         }
-        const blob = await googleDriveService.downloadFile(file.id);
+        const token = driveToken || await googleDriveService.getAccessToken();
+        const blob = await googleDriveService.downloadFile(file.id, token);
         await storageService.cacheFileOffline(file, blob);
         await loadFiles();
       } catch (err: any) {
@@ -174,6 +180,33 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     if (!bytes) return '';
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Intercept library list clicks for Drive files that aren't offline-cached.
+  // We download the blob here (in a user-gesture context) rather than deferring
+  // to ViewerPage's useEffect, where browser popup policy blocks the OAuth call.
+  const handleFileClick = async (file: ScoreFile) => {
+    if (file.source !== 'google-drive' || file.offline) {
+      // Local files and offline-cached files: open immediately, no download needed
+      onOpenFile(file);
+      return;
+    }
+    if (!isOnline) {
+      setErrorMsg('You must be online to open this score.');
+      return;
+    }
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const token = driveToken || await googleDriveService.getAccessToken();
+      if (!driveToken) setDriveToken(token);
+      const blob = await googleDriveService.downloadFile(file.id, token);
+      onOpenFile(file, blob);
+    } catch (err: any) {
+      setErrorMsg('Failed to open from Google Drive: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatDate = (ts: number) =>
@@ -330,7 +363,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                 {filteredFiles.map(file => (
                   <div
                     key={file.id}
-                    onClick={() => onOpenFile(file)}
+                    onClick={() => handleFileClick(file)}
                     className="flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-colors group"
                     style={{ background: 'var(--md-surface-1)' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
@@ -401,8 +434,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         </div>
       </div>
 
-      {showDriveBrowser && (
+      {showDriveBrowser && driveToken && (
         <DriveFileBrowser
+          token={driveToken}
           onSelect={handleDriveFileSelected}
           onClose={() => setShowDriveBrowser(false)}
         />

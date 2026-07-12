@@ -35,6 +35,17 @@ try {
   console.warn('[ScoreTone] Failed to restore token from localStorage', e);
 }
 
+// Clear the cached token from memory and localStorage
+function clearStoredToken(): void {
+  accessToken = null;
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(EXPIRES_KEY);
+  } catch (e) {
+    console.warn('[ScoreTone] Failed to clear token from localStorage', e);
+  }
+}
+
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 export const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID || '';
 
@@ -72,14 +83,18 @@ export const googleDriveService = {
     return !!accessToken;
   },
 
-  // Initialize Google OAuth2 Token Client (no picker needed)
-  initTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void): void {
-    if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+  // Initialize Google OAuth2 Token Client (no picker needed).
+  // Returns the initialized client or throws.
+  async ensureTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void): Promise<void> {
+    await loadGsiScript();
+
+    if (!window.google?.accounts?.oauth2) {
       onError(new Error('Google Identity Services client not loaded.'));
       return;
     }
 
     try {
+      // Always (re-)initialize so the callback is fresh
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/drive.readonly',
@@ -89,8 +104,8 @@ export const googleDriveService = {
             return;
           }
           accessToken = response.access_token;
-          
-          // Store token in localStorage with 1-hour expiration
+
+          // Persist token with 1-hour TTL
           try {
             const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
             localStorage.setItem(TOKEN_KEY, response.access_token);
@@ -107,144 +122,125 @@ export const googleDriveService = {
     }
   },
 
-  // Trigger Auth Token Flow (now dynamically loading script first)
+  // Return cached token immediately, or trigger the OAuth popup and wait for the result.
+  // Must only be called from a user-gesture context the first time (browser popup policy).
   async getAccessToken(): Promise<string> {
     if (accessToken) {
       return accessToken;
     }
 
-    await loadGsiScript();
-
     return new Promise((resolve, reject) => {
-      this.initTokenClient(
+      this.ensureTokenClient(
         (token) => resolve(token),
-        (err) => reject(new Error(err.message || 'OAuth authentication failed.'))
-      );
-
-      if (tokenClient) {
+        (err) => reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'))
+      ).then(() => {
+        if (!tokenClient) {
+          reject(new Error('OAuth token client could not be initialized.'));
+          return;
+        }
         tokenClient.requestAccessToken({ prompt: '' });
-      } else {
-        reject(new Error('OAuth token client was not initialized.'));
-      }
+      }).catch(reject);
     });
   },
 
-  // List PDF files from Google Drive using the REST API directly (no Picker widget needed)
+  // List PDF files from Google Drive using the REST API directly (no Picker widget needed).
+  // Falls back to a global Drive search if a folder filter yields no results (either HTTP error or empty list).
   async listPdfFiles(token: string, pageToken?: string, searchTerm?: string): Promise<{ files: GoogleDriveFileMetadata[]; nextPageToken?: string; isFiltered: boolean }> {
-    let query = `mimeType='application/pdf' and trashed=false`;
-    let isFiltered = false;
-    
-    // If DRIVE_FOLDER_ID is set, we attempt to filter by that folder.
-    if (DRIVE_FOLDER_ID) {
-      query += ` and '${DRIVE_FOLDER_ID}' in parents`;
-      isFiltered = true;
-    }
-
-    if (searchTerm) {
-      // Escape single quotes for search
-      const escaped = searchTerm.replace(/'/g, "\\'");
-      query += ` and name contains '${escaped}'`;
-    }
-    
     const fields = encodeURIComponent('nextPageToken,files(id,name,size,modifiedTime,thumbnailLink)');
-    let url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
+    const escapedSearch = searchTerm ? searchTerm.replace(/'/g, "\\'") : '';
 
-    let response = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const buildUrl = (includeFolder: boolean) => {
+      let q = `mimeType='application/pdf' and trashed=false`;
+      if (includeFolder && DRIVE_FOLDER_ID) q += ` and '${DRIVE_FOLDER_ID}' in parents`;
+      if (escapedSearch) q += ` and name contains '${escapedSearch}'`;
+      return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${
+        pageToken ? `&pageToken=${pageToken}` : ''
+      }`;
+    };
 
-    // If query failed (e.g. folder ID doesn't exist for this user), retry without the folder filter
-    if (!response.ok && DRIVE_FOLDER_ID) {
-      console.warn('[ScoreTone] Failed to filter by folder, retrying with global drive search...');
-      isFiltered = false;
-      let fallbackQuery = `mimeType='application/pdf' and trashed=false`;
-      if (searchTerm) {
-        fallbackQuery += ` and name contains '${searchTerm.replace(/'/g, "\\'")}'`;
+    const doFetch = async (url: string) => {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        if (res.status === 401) clearStoredToken();
+        throw new Error(`Failed to list Drive files: ${res.statusText}`);
       }
-      url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fallbackQuery)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
-      response = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    }
+      return res.json();
+    };
 
-    if (!response.ok) {
-      if (response.status === 401) {
-        accessToken = null;
-        try {
-          localStorage.removeItem(TOKEN_KEY);
-          localStorage.removeItem(EXPIRES_KEY);
-        } catch (e) {}
-      }
-      throw new Error(`Failed to list Drive files: ${response.statusText}`);
-    }
+    // First attempt: with folder filter (if configured)
+    if (DRIVE_FOLDER_ID) {
+      try {
+        const data = await doFetch(buildUrl(true));
+        const driveFiles: any[] = data.files || [];
 
-    const data = await response.json();
-    let driveFiles = data.files || [];
-    let nextToken = data.nextPageToken;
-
-    // Google API Quirk: searching for a folder that isn't yours returns a "200 OK" status with an empty files list.
-    // So if the list is empty and folder filtering was turned on, we fallback and search the entire Drive.
-    if (driveFiles.length === 0 && DRIVE_FOLDER_ID) {
-      console.warn('[ScoreTone] Folder search returned 0 files, retrying with global drive search...');
-      isFiltered = false;
-      let fallbackQuery = `mimeType='application/pdf' and trashed=false`;
-      if (searchTerm) {
-        fallbackQuery += ` and name contains '${searchTerm.replace(/'/g, "\\'")}'`;
-      }
-      const fallbackUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fallbackQuery)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''}`;
-      
-      const fallbackResponse = await fetch(fallbackUrl, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        driveFiles = fallbackData.files || [];
-        nextToken = fallbackData.nextPageToken;
+        // Google quirk: a 200 with 0 files when the folder isn't shared with the user
+        if (driveFiles.length > 0 || !searchTerm) {
+          // If we got results (or no search term to broaden), return them.
+          // A legitimate empty folder should fall through only on initial load.
+          if (driveFiles.length > 0) {
+            return {
+              files: driveFiles.map((f: any) => ({
+                id: f.id, name: f.name,
+                size: parseInt(f.size || '0', 10),
+                modifiedTime: f.modifiedTime,
+                thumbnailLink: f.thumbnailLink
+              })),
+              nextPageToken: data.nextPageToken,
+              isFiltered: true
+            };
+          }
+        }
+        console.warn('[ScoreTone] Folder filter returned 0 results, falling back to global Drive search.');
+      } catch (err: any) {
+        // HTTP error with folder filter — fall through to global search
+        console.warn('[ScoreTone] Folder filter request failed, falling back to global Drive search.', err.message);
       }
     }
 
+    // Fallback (or primary if no folder configured): global Drive search
+    const data = await doFetch(buildUrl(false));
+    const driveFiles: any[] = data.files || [];
     return {
       files: driveFiles.map((f: any) => ({
-        id: f.id,
-        name: f.name,
+        id: f.id, name: f.name,
         size: parseInt(f.size || '0', 10),
         modifiedTime: f.modifiedTime,
         thumbnailLink: f.thumbnailLink
       })),
-      nextPageToken: nextToken,
-      isFiltered
+      nextPageToken: data.nextPageToken,
+      isFiltered: false
     };
   },
 
-  // Download Google Drive File content as Blob
-  async downloadFile(fileId: string): Promise<Blob> {
-    const token = await this.getAccessToken();
+  // Download a Google Drive file's content as a Blob.
+  // Accepts an already-acquired token to avoid redundant getAccessToken() calls
+  // when the caller already holds a valid token.
+  async downloadFile(fileId: string, existingToken?: string): Promise<Blob> {
+    const token = existingToken || await this.getAccessToken();
 
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
 
     if (!response.ok) {
-      if (response.status === 401) {
-        accessToken = null;
-        try {
-          localStorage.removeItem(TOKEN_KEY);
-          localStorage.removeItem(EXPIRES_KEY);
-        } catch (e) {}
-      }
-      throw new Error(`Failed to download file from Google Drive: ${response.statusText}`);
+      if (response.status === 401) clearStoredToken();
+      const detail = response.statusText || `HTTP ${response.status}`;
+      throw new Error(`Failed to download file from Google Drive: ${detail}`);
     }
 
     return response.blob();
   },
 
+  // Return the current in-memory token without triggering auth.
+  // Useful for passing to sub-components so they don't need to call getAccessToken().
+  getCachedToken(): string | null {
+    return accessToken;
+  },
+
   // Clear session token (logout/disconnect)
   logout(): void {
-    accessToken = null;
+    clearStoredToken();
     tokenClient = null;
   }
 };
