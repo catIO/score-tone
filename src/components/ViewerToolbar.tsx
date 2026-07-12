@@ -29,12 +29,23 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   const [jumpPage, setJumpPage] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [shared, setShared] = useState(false);
+  const [pageLinkCopied, setPageLinkCopied] = useState(false);
 
+  // Drive share link — always includes current page so recipients land in the right place
   const handleShare = () => {
-    const url = `${window.location.origin}/?driveId=${file.id}&name=${encodeURIComponent(file.name)}`;
+    const url = `${window.location.origin}/?driveId=${file.id}&name=${encodeURIComponent(file.name)}&page=${currentPage}`;
     navigator.clipboard.writeText(url).then(() => {
       setShared(true);
       setTimeout(() => setShared(false), 2000);
+    });
+  };
+
+  // Page permalink — works for any file (local or Drive) using the ?view= scheme
+  const handleCopyPageLink = () => {
+    const url = `${window.location.origin}/?view=${file.id}&page=${currentPage}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setPageLinkCopied(true);
+      setTimeout(() => setPageLinkCopied(false), 2000);
     });
   };
 
@@ -155,11 +166,24 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 
         <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
 
+        {/* Copy permalink to current page — works for any file */}
+        <button
+          onClick={handleCopyPageLink}
+          className={`md-icon-btn ${pageLinkCopied ? 'active' : ''}`}
+          title={pageLinkCopied ? 'Page link copied!' : `Copy link to page ${currentPage}`}
+          style={{ width: 36, height: 36 }}
+        >
+          <span className="material-symbols-outlined text-[20px] leading-none">
+            {pageLinkCopied ? 'check' : 'bookmark'}
+          </span>
+        </button>
+
+        {/* Drive share link — includes page number */}
         {file.source === 'google-drive' && (
           <button
             onClick={handleShare}
             className={`md-icon-btn ${shared ? 'active' : ''}`}
-            title={shared ? 'Link copied!' : 'Copy share link'}
+            title={shared ? 'Link copied!' : 'Share this score (page ' + currentPage + ')'}
             style={{ width: 36, height: 36 }}
           >
             <span className="material-symbols-outlined text-[20px] leading-none">
