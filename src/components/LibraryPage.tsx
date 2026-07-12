@@ -279,13 +279,29 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-              Score Tone
-            </h1>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
-              Digital music stand
-            </p>
+          <div className="flex items-center gap-3">
+            {/* Logo */}
+            <svg viewBox="0 -960 960 960" className="w-10 h-10 flex-shrink-0">
+              {/* Outer folder frames */}
+              <path 
+                d="M320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z" 
+                fill="currentColor"
+                style={{ color: 'var(--md-on-surface-variant)' }} 
+              />
+              {/* The note (amber yellow tint) */}
+              <path 
+                d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29Z" 
+                fill="#FFB300" 
+              />
+            </svg>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
+                Score Tone
+              </h1>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+                Your sheet music, in perfect light
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
             style={{
