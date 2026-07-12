@@ -232,6 +232,28 @@ export const googleDriveService = {
     return response.blob();
   },
 
+  // Fetch updated metadata for a single file on Google Drive
+  async getFileMetadata(fileId: string, token: string): Promise<GoogleDriveFileMetadata> {
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,thumbnailLink`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!response.ok) {
+      if (response.status === 401) clearStoredToken();
+      throw new Error(`Failed to fetch file metadata: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return {
+      id: data.id,
+      name: data.name,
+      size: parseInt(data.size || '0', 10),
+      modifiedTime: data.modifiedTime,
+      thumbnailLink: data.thumbnailLink
+    };
+  },
+
   // Return the current in-memory token without triggering auth.
   // Useful for passing to sub-components so they don't need to call getAccessToken().
   getCachedToken(): string | null {

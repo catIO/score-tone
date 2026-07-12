@@ -147,6 +147,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       const existing = files.find(f => f.id === metadata.id);
       if (existing) {
         existing.lastOpened = Date.now();
+        existing.name = metadata.name.replace(/\.pdf$/i, '');
+        existing.size = metadata.size;
+        existing.thumbnail = metadata.thumbnailLink;
         await storageService.saveFileMetadata(existing);
         await loadFiles();
         setLoading(false);

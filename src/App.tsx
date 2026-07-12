@@ -273,6 +273,7 @@ export const App: React.FC = () => {
             appSettings={appSettings}
             onSettingsChange={handleSettingsChange}
             onPagePermalink={(page) => handleViewerPageChange(activeFile.id, page)}
+            onFileMetadataUpdated={handleOpenFile}
           />
         )
       )}

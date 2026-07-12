@@ -19,6 +19,8 @@ interface ViewerPageProps {
   onSettingsChange: (settings: AppSettings) => void;
   /** Called on every page turn so App.tsx can keep the URL ?page= param in sync */
   onPagePermalink?: (page: number) => void;
+  /** Called when a Google Drive file's name/metadata changes are synced in the background */
+  onFileMetadataUpdated?: (file: ScoreFile) => void;
 }
 
 export const ViewerPage: React.FC<ViewerPageProps> = ({
@@ -28,6 +30,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   appSettings,
   onSettingsChange,
   onPagePermalink,
+  onFileMetadataUpdated,
 }) => {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(file.lastPage || 1);
@@ -98,7 +101,38 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       }
     };
 
+    // Background metadata check (only for Google Drive files when online & has cached token)
+    const syncMetadata = async () => {
+      if (file.source !== 'google-drive' || !navigator.onLine) return;
+      try {
+        const token = googleDriveService.getCachedToken();
+        if (!token) return;
+        const meta = await googleDriveService.getFileMetadata(file.id, token);
+        const updatedName = meta.name.replace(/\.pdf$/i, '');
+        if (
+          file.name !== updatedName ||
+          file.size !== meta.size ||
+          file.thumbnail !== meta.thumbnailLink
+        ) {
+          const updatedFile = {
+            ...file,
+            name: updatedName,
+            size: meta.size,
+            thumbnail: meta.thumbnailLink,
+            modifiedTime: meta.modifiedTime
+          };
+          await storageService.saveFileMetadata(updatedFile);
+          if (active) {
+            onFileMetadataUpdated?.(updatedFile);
+          }
+        }
+      } catch (err) {
+        console.warn('[ScoreTone] Background metadata check failed:', err);
+      }
+    };
+
     loadPdf();
+    syncMetadata();
 
     return () => {
       active = false;
