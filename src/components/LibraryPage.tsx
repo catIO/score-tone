@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi } from 'lucide-react';
 import { storageService, type ScoreFile } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
@@ -18,9 +18,55 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [driveToken, setDriveToken] = useState<string | null>(
     () => googleDriveService.getCachedToken()
   );
+  // Share dropdown state: tracks which card's menu is open and which item was just copied
+  const [openShareId, setOpenShareId] = useState<string | null>(null);
+  const [copiedState, setCopiedState] = useState<{ id: string; type: 'score' | 'page' } | null>(null);
+  const shareMenuRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isOnline = useNetworkStatus();
   const isGoogleConfigured = googleDriveService.isConfigured();
+
+  // Close open share menu when clicking outside any card's dropdown
+  useEffect(() => {
+    if (!openShareId) return;
+    const handler = (e: MouseEvent) => {
+      const menuEl = shareMenuRefs.current.get(openShareId);
+      if (menuEl && !menuEl.contains(e.target as Node)) {
+        setOpenShareId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [openShareId]);
+
+  // Build share URLs for a card (same scheme as ViewerToolbar)
+  const getScoreLinkUrl = useCallback((file: ScoreFile) =>
+    file.source === 'google-drive'
+      ? `${window.location.origin}/?driveId=${file.id}&name=${encodeURIComponent(file.name)}`
+      : `${window.location.origin}/?view=${file.id}`
+  , []);
+
+  const getPageLinkUrl = useCallback((file: ScoreFile) =>
+    file.lastPage > 1
+      ? `${window.location.origin}/?view=${file.id}&page=${file.lastPage}`
+      : `${window.location.origin}/?view=${file.id}`
+  , []);
+
+  const handleCopyScoreLink = (file: ScoreFile, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(getScoreLinkUrl(file)).then(() => {
+      setCopiedState({ id: file.id, type: 'score' });
+      setTimeout(() => { setCopiedState(null); setOpenShareId(null); }, 1800);
+    });
+  };
+
+  const handleCopyPageLink = (file: ScoreFile, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(getPageLinkUrl(file)).then(() => {
+      setCopiedState({ id: file.id, type: 'page' });
+      setTimeout(() => { setCopiedState(null); setOpenShareId(null); }, 1800);
+    });
+  };
 
   useEffect(() => { loadFiles(); }, []);
 
@@ -409,6 +455,67 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
                     {/* Actions */}
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {/* Share dropdown */}
+                      <div
+                        ref={el => { if (el) shareMenuRefs.current.set(file.id, el); else shareMenuRefs.current.delete(file.id); }}
+                        style={{ position: 'relative' }}
+                      >
+                        <button
+                          onClick={e => { e.stopPropagation(); setOpenShareId(id => id === file.id ? null : file.id); }}
+                          className={`md-icon-btn ${openShareId === file.id ? 'active' : ''}`}
+                          title="Share"
+                          style={{ width: 32, height: 32 }}
+                        >
+                          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                          </svg>
+                        </button>
+
+                        {openShareId === file.id && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 6px)',
+                              right: 0,
+                              minWidth: 200,
+                              background: 'var(--md-surface-3)',
+                              border: '1px solid var(--md-outline-variant)',
+                              borderRadius: 12,
+                              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                              overflow: 'hidden',
+                              zIndex: 200,
+                            }}
+                          >
+                            <button
+                              onClick={e => handleCopyScoreLink(file, e)}
+                              className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
+                              style={{ color: 'var(--md-on-surface)' }}
+                            >
+                              <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+                                {copiedState?.id === file.id && copiedState.type === 'score' ? 'check' : 'menu_book'}
+                              </span>
+                              {copiedState?.id === file.id && copiedState.type === 'score' ? 'Copied!' : 'Copy link to score'}
+                            </button>
+
+                            <div style={{ height: 1, background: 'var(--md-outline-variant)', margin: '0 12px' }} />
+
+                            <button
+                              onClick={e => handleCopyPageLink(file, e)}
+                              className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
+                              style={{ color: 'var(--md-on-surface)' }}
+                            >
+                              <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+                                {copiedState?.id === file.id && copiedState.type === 'page' ? 'check' : 'article'}
+                              </span>
+                              {copiedState?.id === file.id && copiedState.type === 'page'
+                                ? 'Copied!'
+                                : `Copy link to page ${file.lastPage}`}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
                       <button
                         onClick={e => toggleOfflineCache(file, e)}
                         className="md-icon-btn"
