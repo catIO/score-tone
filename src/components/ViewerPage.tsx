@@ -53,6 +53,14 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const zoomOut = useCallback(() => setZoom(z => Math.max(0.6, z - 0.1)), []);
   const zoomReset = useCallback(() => setZoom(1.0), []);
 
+  // Update browser tab title
+  useEffect(() => {
+    document.title = `${file.name} — Score Tone`;
+    return () => {
+      document.title = 'Score Tone';
+    };
+  }, [file.name]);
+
   // Load PDF file on mount
   useEffect(() => {
     let active = true;

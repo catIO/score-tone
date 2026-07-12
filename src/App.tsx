@@ -152,6 +152,10 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleFileMetadataUpdated = (updatedFile: ScoreFile) => {
+    setActiveFile(updatedFile);
+  };
+
   // Called by ViewerPage when the user turns a page — keeps the URL in sync
   // so the current URL is always a valid permalink to the exact position.
   const handleViewerPageChange = (fileId: string, page: number) => {
@@ -273,7 +277,7 @@ export const App: React.FC = () => {
             appSettings={appSettings}
             onSettingsChange={handleSettingsChange}
             onPagePermalink={(page) => handleViewerPageChange(activeFile.id, page)}
-            onFileMetadataUpdated={handleOpenFile}
+            onFileMetadataUpdated={handleFileMetadataUpdated}
           />
         )
       )}
