@@ -5,11 +5,13 @@ interface SettingsPanelProps {
   settings: AppSettings;
   onChange: (settings: AppSettings) => void;
   onClose: () => void;
+  wakeLockActive: boolean;
+  wakeLockSupported: boolean;
 }
 
-const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void }> = ({ checked, onChange }) => (
-  <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
-    <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="sr-only peer" />
+const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled }) => (
+  <label style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.4 : 1 }}>
+    <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="sr-only peer" disabled={disabled} />
     <div
       className="peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all"
       style={{
@@ -77,9 +79,16 @@ const Row: React.FC<{ label: string; description?: string; children: React.React
   </div>
 );
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, onClose }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, onClose, wakeLockActive, wakeLockSupported }) => {
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     onChange({ ...settings, [key]: value });
+
+  // Derive wake lock status label and color
+  const wakeLockStatus = !wakeLockSupported
+    ? { label: 'Unsupported', color: 'var(--md-on-surface-variant)' }
+    : wakeLockActive
+      ? { label: 'Active', color: '#81C784' }
+      : { label: settings.keepScreenAwake ? 'Acquiring…' : 'Off', color: 'var(--md-on-surface-variant)' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, color: 'var(--md-on-surface)' }}>
@@ -144,6 +153,36 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           className="custom-slider"
           style={{ width: '100%' }}
         />
+      </div>
+
+      {/* Performance */}
+      <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, marginTop: 8 }}>
+        Performance
+      </p>
+      <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--md-surface-3)', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 2 }}>Keep Screen Awake</p>
+            <p style={{ fontSize: 11, color: 'var(--md-on-surface-variant)' }}>
+              Prevent screen timeout while reading a score
+            </p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+            <Toggle
+              checked={settings.keepScreenAwake}
+              onChange={v => set('keepScreenAwake', v)}
+              disabled={!wakeLockSupported}
+            />
+            <span style={{ fontSize: 10, fontWeight: 600, color: wakeLockStatus.color, letterSpacing: '0.04em' }}>
+              {wakeLockStatus.label}
+            </span>
+          </div>
+        </div>
+        {!wakeLockSupported && (
+          <p style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', marginTop: 8 }}>
+            Screen Wake Lock is not supported in this browser. Use Safari 16.4+ on iPad or Chrome on desktop.
+          </p>
+        )}
       </div>
     </div>
   );

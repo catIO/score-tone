@@ -17,6 +17,8 @@ export interface AppSettings {
   tapZoneWidth: number; // percentage (e.g., 20)
   autoHideControls: boolean;
   twoPageLandscape: boolean;
+  /** Acquire a Screen Wake Lock while a score is open (prevents screen timeout) */
+  keepScreenAwake: boolean;
 }
 
 const DEFAULT_FILTERS: FilterSettings = {
@@ -48,7 +50,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   scrollMode: 'single',
   tapZoneWidth: 20,
   autoHideControls: true,
-  twoPageLandscape: true
+  twoPageLandscape: true,
+  keepScreenAwake: true
 };
 
 const STORAGE_KEY = 'scoretone_settings';

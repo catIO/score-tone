@@ -10,6 +10,7 @@ import DisplayControls from './DisplayControls';
 import SettingsPanel from './SettingsPanel';
 import SvgFilters from './SvgFilters';
 import { googleDriveService } from '../services/googleDriveService';
+import { useWakeLock } from '../hooks/useWakeLock';
 
 interface ViewerPageProps {
   file: ScoreFile;
@@ -48,6 +49,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const [zoom, setZoom] = useState<number>(1.0);
 
   const hideTimerRef = useRef<number | null>(null);
+  // Tracks last page-turn timestamp for Bluetooth pedal debouncing
+  const lastKeyTurnRef = useRef<number>(0);
+
+  // Screen Wake Lock — keeps display on during a performance session
+  const wakeLock = useWakeLock(appSettings.keepScreenAwake);
 
   const zoomIn = useCallback(() => setZoom(z => Math.min(3.0, z + 0.1)), []);
   const zoomOut = useCallback(() => setZoom(z => Math.max(0.6, z - 0.1)), []);
@@ -196,6 +202,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   // Keyboard Navigation & Bluetooth turn pedals
   useEffect(() => {
+    const PEDAL_DEBOUNCE_MS = 250;
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore key events if focused on input elements (like page jump input)
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
@@ -208,6 +215,22 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       // If we are zoomed in, let arrow keys scroll the container naturally instead of turning the page
       if (zoom > 1.0 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
         return;
+      }
+
+      const isPageTurnKey = [
+        'ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter',
+        'ArrowLeft', 'ArrowUp', 'PageUp'
+      ].includes(e.key);
+
+      // Debounce page-turn keys to prevent double-page skips from sensitive
+      // Bluetooth foot pedal switches that fire multiple keydown events.
+      if (isPageTurnKey) {
+        const now = Date.now();
+        if (now - lastKeyTurnRef.current < PEDAL_DEBOUNCE_MS) {
+          e.preventDefault();
+          return;
+        }
+        lastKeyTurnRef.current = now;
       }
 
       switch (e.key) {
@@ -441,6 +464,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           settings={appSettings}
           onChange={handleSettingsChangeLocal}
           onClose={() => setIsSettingsOpen(false)}
+          wakeLockActive={wakeLock.isActive}
+          wakeLockSupported={wakeLock.isSupported}
         />
       </div>
 
