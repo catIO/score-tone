@@ -103,6 +103,13 @@ export const googleDriveService = {
             onError(response);
             return;
           }
+
+          const savedState = sessionStorage.getItem('st-oauth-state');
+          if (!response.state || response.state !== savedState) {
+            onError(new Error('OAuth state check failed. Possible CSRF request.'));
+            return;
+          }
+
           accessToken = response.access_token;
 
           // Persist token with 1-hour TTL
@@ -130,6 +137,9 @@ export const googleDriveService = {
     }
 
     return new Promise((resolve, reject) => {
+      const state = Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem('st-oauth-state', state);
+
       this.ensureTokenClient(
         (token) => resolve(token),
         (err) => reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'))
@@ -138,7 +148,7 @@ export const googleDriveService = {
           reject(new Error('OAuth token client could not be initialized.'));
           return;
         }
-        tokenClient.requestAccessToken({ prompt: '' });
+        tokenClient.requestAccessToken({ prompt: '', state: state });
       }).catch(reject);
     });
   },
