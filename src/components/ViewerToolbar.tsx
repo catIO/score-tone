@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { ScoreFile } from '../services/storageService';
 
 interface ViewerToolbarProps {
@@ -28,24 +28,42 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 }) => {
   const [jumpPage, setJumpPage] = useState('');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [shared, setShared] = useState(false);
-  const [pageLinkCopied, setPageLinkCopied] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [copiedScore, setCopiedScore] = useState(false);
+  const [copiedPage, setCopiedPage] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement>(null);
 
-  // Drive share link — always includes current page so recipients land in the right place
-  const handleShare = () => {
-    const url = `${window.location.origin}/?driveId=${file.id}&name=${encodeURIComponent(file.name)}&page=${currentPage}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setShared(true);
-      setTimeout(() => setShared(false), 2000);
+  // Close the share menu when clicking outside of it
+  useEffect(() => {
+    if (!shareMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShareMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [shareMenuOpen]);
+
+  // Score link — Drive files use the ?driveId= share scheme; local files use ?view=
+  const scoreLinkUrl = file.source === 'google-drive'
+    ? `${window.location.origin}/?driveId=${file.id}&name=${encodeURIComponent(file.name)}`
+    : `${window.location.origin}/?view=${file.id}`;
+
+  // Page permalink — always ?view= so it works for all file types
+  const pageLinkUrl = `${window.location.origin}/?view=${file.id}&page=${currentPage}`;
+
+  const handleCopyScoreLink = () => {
+    navigator.clipboard.writeText(scoreLinkUrl).then(() => {
+      setCopiedScore(true);
+      setTimeout(() => { setCopiedScore(false); setShareMenuOpen(false); }, 1800);
     });
   };
 
-  // Page permalink — works for any file (local or Drive) using the ?view= scheme
   const handleCopyPageLink = () => {
-    const url = `${window.location.origin}/?view=${file.id}&page=${currentPage}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setPageLinkCopied(true);
-      setTimeout(() => setPageLinkCopied(false), 2000);
+    navigator.clipboard.writeText(pageLinkUrl).then(() => {
+      setCopiedPage(true);
+      setTimeout(() => { setCopiedPage(false); setShareMenuOpen(false); }, 1800);
     });
   };
 
@@ -166,31 +184,58 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 
         <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
 
-        {/* Copy permalink to current page — works for any file */}
-        <button
-          onClick={handleCopyPageLink}
-          className={`md-icon-btn ${pageLinkCopied ? 'active' : ''}`}
-          title={pageLinkCopied ? 'Page link copied!' : `Copy link to page ${currentPage}`}
-          style={{ width: 36, height: 36 }}
-        >
-          <span className="material-symbols-outlined text-[20px] leading-none">
-            {pageLinkCopied ? 'check' : 'bookmark'}
-          </span>
-        </button>
-
-        {/* Drive share link — includes page number */}
-        {file.source === 'google-drive' && (
+        {/* Share dropdown */}
+        <div ref={shareMenuRef} style={{ position: 'relative' }}>
           <button
-            onClick={handleShare}
-            className={`md-icon-btn ${shared ? 'active' : ''}`}
-            title={shared ? 'Link copied!' : 'Share this score (page ' + currentPage + ')'}
+            onClick={() => setShareMenuOpen(o => !o)}
+            className={`md-icon-btn ${shareMenuOpen ? 'active' : ''}`}
+            title="Share"
             style={{ width: 36, height: 36 }}
           >
-            <span className="material-symbols-outlined text-[20px] leading-none">
-              {shared ? 'check' : 'share'}
-            </span>
+            <span className="material-symbols-outlined text-[20px] leading-none">share</span>
           </button>
-        )}
+
+          {shareMenuOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                right: 0,
+                minWidth: 200,
+                background: 'var(--md-surface-3)',
+                border: '1px solid var(--md-outline-variant)',
+                borderRadius: 12,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                overflow: 'hidden',
+                zIndex: 200,
+              }}
+            >
+              <button
+                onClick={handleCopyScoreLink}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
+                style={{ color: 'var(--md-on-surface)' }}
+              >
+                <span className="material-symbols-outlined text-[18px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+                  {copiedScore ? 'check' : 'menu_book'}
+                </span>
+                {copiedScore ? 'Copied!' : 'Copy link to score'}
+              </button>
+
+              <div style={{ height: 1, background: 'var(--md-outline-variant)', margin: '0 12px' }} />
+
+              <button
+                onClick={handleCopyPageLink}
+                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
+                style={{ color: 'var(--md-on-surface)' }}
+              >
+                <span className="material-symbols-outlined text-[18px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+                  {copiedPage ? 'check' : 'article'}
+                </span>
+                {copiedPage ? 'Copied!' : `Copy link to page ${currentPage}`}
+              </button>
+            </div>
+          )}
+        </div>
 
         <button
           onClick={onToggleDisplay}

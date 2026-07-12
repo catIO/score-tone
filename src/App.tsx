@@ -23,6 +23,8 @@ export const App: React.FC = () => {
     const viewId = params.get('view');
     const driveId = params.get('driveId');
     const name = params.get('name') || 'Shared Score';
+    const pageParam = params.get('page');
+    const linkedPage = pageParam ? Math.max(1, parseInt(pageParam, 10) || 1) : null;
 
     const targetId = viewId || driveId;
 
@@ -32,36 +34,31 @@ export const App: React.FC = () => {
         const existing = filesList.find((f) => f.id === targetId);
         const cachedBlob = await storageService.getFileData(targetId);
 
+        // Build the file object, overriding lastPage if a page param was provided
+        const makeFileObj = (base: typeof existing, offline: boolean) => ({
+          id: targetId,
+          name,
+          source: 'google-drive' as const,
+          lastOpened: Date.now(),
+          lastPage: linkedPage ?? (base?.lastPage ?? 1),
+          offline,
+          ...(base ?? {}),
+          // page param always wins over stored lastPage for deep-link navigation
+          ...(linkedPage ? { lastPage: linkedPage } : {}),
+        });
+
         if (cachedBlob) {
-          // File is cached offline: safe to open immediately without network or auth checks
-          setActiveFile(existing || {
-            id: targetId,
-            name,
-            source: 'google-drive',
-            lastOpened: Date.now(),
-            lastPage: 1,
-            offline: true
-          });
+          setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : makeFileObj(undefined, true));
           setInMemoryBlob(cachedBlob);
           setActivePage('viewer');
           setPendingLink(null);
         } else {
-          // File is NOT cached: we must have a Google Drive access token.
-          // If we don't have one in memory, direct to the Google Sign-in gate
           if (googleDriveService.hasToken()) {
-            setActiveFile(existing || {
-              id: targetId,
-              name,
-              source: 'google-drive',
-              lastOpened: Date.now(),
-              lastPage: 1,
-              offline: false
-            });
+            setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : makeFileObj(undefined, false));
             setInMemoryBlob(undefined);
             setActivePage('viewer');
             setPendingLink(null);
           } else {
-            // No token: show sign-in gate so OAuth popup is triggered on click (gesture)
             setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
           }
         }
@@ -69,7 +66,6 @@ export const App: React.FC = () => {
         console.error('[ScoreTone] Failed to parse URL parameters', e);
       }
     } else {
-      // No file active: go back to library
       setActivePage('library');
       setActiveFile(null);
       setInMemoryBlob(undefined);
@@ -135,20 +131,36 @@ export const App: React.FC = () => {
     settingsService.saveSettings(newSettings);
   };
 
-  const handleOpenFile = (file: ScoreFile, blob?: Blob) => {
-    setActiveFile(file);
+  const handleOpenFile = (file: ScoreFile, blob?: Blob, page?: number) => {
+    const fileToOpen = page ? { ...file, lastPage: page } : file;
+    setActiveFile(fileToOpen);
     setInMemoryBlob(blob);
     setActivePage('viewer');
 
-    // Update URL history to reflect the current score view (without reloading)
+    // Update URL to reflect the current view, including page if specified
     const params = new URLSearchParams(window.location.search);
-    if (params.get('view') !== file.id) {
+    const pageToWrite = page ?? file.lastPage;
+    const newUrl = pageToWrite && pageToWrite > 1
+      ? `?view=${file.id}&page=${pageToWrite}`
+      : `?view=${file.id}`;
+    if (params.get('view') !== file.id || params.get('page') !== String(pageToWrite ?? '')) {
       window.history.pushState(
-        { page: 'viewer', fileId: file.id },
+        { page: 'viewer', fileId: file.id, filePage: pageToWrite },
         '',
-        `?view=${file.id}`
+        newUrl
       );
     }
+  };
+
+  // Called by ViewerPage when the user turns a page — keeps the URL in sync
+  // so the current URL is always a valid permalink to the exact position.
+  const handleViewerPageChange = (fileId: string, page: number) => {
+    const newUrl = page > 1 ? `?view=${fileId}&page=${page}` : `?view=${fileId}`;
+    window.history.replaceState(
+      { page: 'viewer', fileId, filePage: page },
+      '',
+      newUrl
+    );
   };
 
   const handleBackToLibrary = () => {
@@ -260,6 +272,7 @@ export const App: React.FC = () => {
             onBack={handleBackToLibrary}
             appSettings={appSettings}
             onSettingsChange={handleSettingsChange}
+            onPagePermalink={(page) => handleViewerPageChange(activeFile.id, page)}
           />
         )
       )}

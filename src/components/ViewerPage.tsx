@@ -13,10 +13,12 @@ import { googleDriveService } from '../services/googleDriveService';
 
 interface ViewerPageProps {
   file: ScoreFile;
-  inMemoryBlob?: Blob; // Present if temporarily loaded or downloaded from Google Drive
+  inMemoryBlob?: Blob;
   onBack: () => void;
   appSettings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
+  /** Called on every page turn so App.tsx can keep the URL ?page= param in sync */
+  onPagePermalink?: (page: number) => void;
 }
 
 export const ViewerPage: React.FC<ViewerPageProps> = ({
@@ -24,7 +26,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   inMemoryBlob,
   onBack,
   appSettings,
-  onSettingsChange
+  onSettingsChange,
+  onPagePermalink,
 }) => {
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(file.lastPage || 1);
@@ -103,10 +106,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
   }, [file.id, inMemoryBlob]);
 
-  // Save progress (last opened page) back to database
+  // Save progress (last opened page) back to database and update URL permalink
   const handlePageChange = async (newPage: number) => {
     if (newPage < 1 || newPage > totalPages) return;
     setCurrentPage(newPage);
+    onPagePermalink?.(newPage);
     try {
       await storageService.saveFileMetadata({ ...file, lastPage: newPage, lastOpened: Date.now() });
     } catch (err) {
