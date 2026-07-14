@@ -382,7 +382,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                   {loading ? 'Connecting…' : 'Open from Google Drive'}
                 </button>
                 <p className="text-[10px] text-center mt-2" style={{ color: 'var(--md-on-surface-variant)', opacity: 0.8 }}>
-                  By using this integration, you agree to the{' '}
+                  By using this integration, you agree to our{' '}
                   <a
                     href="/privacy.html"
                     target="_blank"
@@ -391,6 +391,16 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                     style={{ color: 'var(--md-primary)' }}
                   >
                     Privacy Policy
+                  </a>{' '}
+                  and{' '}
+                  <a
+                    href="/terms.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-purple-400"
+                    style={{ color: 'var(--md-primary)' }}
+                  >
+                    Terms of Service
                   </a>.
                 </p>
               </>
@@ -572,6 +582,15 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             )}
           </div>
         </div>
+
+        {/* ── Footer ── */}
+        <footer className="mt-16 border-t border-white/5 pt-8 pb-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>
+          <p>&copy; {new Date().getFullYear()} Score Tone. All rights reserved.</p>
+          <div className="flex gap-6">
+            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-white transition-colors">Privacy Policy</a>
+            <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-white transition-colors">Terms of Service</a>
+          </div>
+        </footer>
       </div>
 
       {showDriveBrowser && driveToken && (
