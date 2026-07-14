@@ -381,28 +381,6 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                   </svg>
                   {loading ? 'Connecting…' : 'Open from Google Drive'}
                 </button>
-                <p className="text-[10px] text-center mt-2" style={{ color: 'var(--md-on-surface-variant)', opacity: 0.8 }}>
-                  By using this integration, you agree to our{' '}
-                  <a
-                    href="/privacy.html"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-purple-400"
-                    style={{ color: 'var(--md-primary)' }}
-                  >
-                    Privacy Policy
-                  </a>{' '}
-                  and{' '}
-                  <a
-                    href="/terms.html"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-purple-400"
-                    style={{ color: 'var(--md-primary)' }}
-                  >
-                    Terms of Service
-                  </a>.
-                </p>
               </>
             )}
 
