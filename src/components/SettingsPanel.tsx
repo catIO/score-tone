@@ -185,7 +185,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
         )}
       </div>
       <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--md-outline-variant)', textAlign: 'center', fontSize: 11 }}>
-        <a href="https://practice-mate.app/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--md-primary)', textDecoration: 'underline' }}>
+        <a href="/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--md-primary)', textDecoration: 'underline' }}>
           Privacy Policy
         </a>
       </div>
