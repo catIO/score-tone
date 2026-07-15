@@ -74,14 +74,14 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Load PDF file on mount
   useEffect(() => {
     let active = true;
-    
+
     const loadPdf = async () => {
       setLoading(true);
       setErrorMsg(null);
-      
+
       try {
         let pdfData: Blob | string | null = null;
-        
+
         // 1. Check inMemoryBlob (e.g. freshly opened local or freshly downloaded Drive file)
         if (inMemoryBlob) {
           pdfData = inMemoryBlob;
@@ -215,7 +215,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
       const isLandscape = containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : false;
       const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
-      
+
       // If we are zoomed in, let arrow keys scroll the container naturally instead of turning the page
       if (zoom > 1.0 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
         return;
@@ -388,7 +388,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Warm tint background overlay configuration
   const tintStyle = React.useMemo(() => {
     if (filters.warmth <= 0 && filters.sepia <= 0) return {};
-    
+
     // Map warmth and sepia to an warm amber multiply overlay color
     const opacity = Math.max(filters.warmth, filters.sepia) / 250; // max 0.4 opacity
     return {
