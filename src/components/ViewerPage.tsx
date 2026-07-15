@@ -51,6 +51,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const hideTimerRef = useRef<number | null>(null);
   // Tracks last page-turn timestamp for Bluetooth pedal debouncing
   const lastKeyTurnRef = useRef<number>(0);
+  // Touch gesture refs — pinch-to-zoom and swipe page navigation
+  const pinchRef = useRef<{ dist: number; startZoom: number } | null>(null);
+  const swipeRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const zoomRef = useRef(zoom);
 
   // Screen Wake Lock — keeps display on during a performance session
   const wakeLock = useWakeLock(appSettings.keepScreenAwake);
@@ -262,6 +266,68 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   }, [currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset, zoom]);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Keep zoomRef current so non-reactive touch handlers always read the latest zoom
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  // Touch gestures: pinch-to-zoom + swipe page navigation
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const pinchDist = (t1: Touch, t2: Touch) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchRef.current = { dist: pinchDist(e.touches[0], e.touches[1]), startZoom: zoomRef.current };
+        swipeRef.current = null;
+      } else if (e.touches.length === 1) {
+        swipeRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinchRef.current) {
+        e.preventDefault(); // block browser native zoom during pinch
+        const newDist = pinchDist(e.touches[0], e.touches[1]);
+        const ratio = newDist / pinchRef.current.dist;
+        const newZoom = Math.min(3.0, Math.max(0.6, pinchRef.current.startZoom * ratio));
+        setZoom(newZoom);
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      // Swipe navigation — only active when not zoomed in
+      if (e.touches.length === 0 && swipeRef.current && zoomRef.current <= 1.0) {
+        const { x, y, t } = swipeRef.current;
+        const dx = e.changedTouches[0].clientX - x;
+        const dy = e.changedTouches[0].clientY - y;
+        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - t < 400) {
+          const isLandscape = el.offsetWidth > el.offsetHeight;
+          const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
+          handlePageChange(dx < 0
+            ? Math.min(totalPages, currentPage + step)
+            : Math.max(1, currentPage - step));
+        }
+      }
+      if (e.touches.length < 2) pinchRef.current = null;
+      if (e.touches.length === 0) swipeRef.current = null;
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [currentPage, totalPages, appSettings.twoPageLandscape]);
 
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;

@@ -94,10 +94,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         source: 'local',
         lastOpened: Date.now(),
         lastPage: 1,
-        offline: false,
+        offline: true,
         size: file.size
       };
-      await storageService.saveFileMetadata(newFile);
+      await storageService.cacheFileOffline(newFile, file);
       await loadFiles();
       setLoading(false);
       onOpenFile(newFile, file);
@@ -235,8 +235,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   // We download the blob here (in a user-gesture context) rather than deferring
   // to ViewerPage's useEffect, where browser popup policy blocks the OAuth call.
   const handleFileClick = async (file: ScoreFile) => {
+    if (file.source === 'local' && !file.offline) {
+      // Legacy local file without a cached blob — ask user to re-upload it
+      setErrorMsg(`"${file.name}" needs to be re-uploaded. Drop the PDF again to reopen it.`);
+      return;
+    }
     if (file.source !== 'google-drive' || file.offline) {
-      // Local files and offline-cached files: open immediately, no download needed
+      // Local files (offline) and offline-cached Drive files: open from IndexedDB
       onOpenFile(file);
       return;
     }

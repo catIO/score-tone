@@ -16,9 +16,37 @@ export interface GoogleDriveFileMetadata {
 
 let accessToken: string | null = null;
 let tokenClient: any = null;
+let tokenExpiresAt: number | null = null;
+let refreshTimerId: ReturnType<typeof setTimeout> | null = null;
 
 const TOKEN_KEY = 'scoretone_google_token';
 const EXPIRES_KEY = 'scoretone_google_token_expires';
+
+function isTokenExpiringSoon(bufferMs = 3 * 60 * 1000): boolean {
+  if (!tokenExpiresAt) return true;
+  return Date.now() >= tokenExpiresAt - bufferMs;
+}
+
+function scheduleTokenRefresh(): void {
+  if (refreshTimerId) {
+    clearTimeout(refreshTimerId);
+    refreshTimerId = null;
+  }
+  if (!tokenExpiresAt) return;
+  const refreshAt = tokenExpiresAt - 5 * 60 * 1000; // 5 min before expiry
+  const delay = refreshAt - Date.now();
+  if (delay <= 0) return;
+
+  refreshTimerId = setTimeout(async () => {
+    try {
+      await googleDriveService.silentRefresh();
+      console.info('[ScoreTone] Token silently refreshed in background.');
+    } catch {
+      // Let the next real request handle re-auth
+      console.warn('[ScoreTone] Background token refresh failed; will re-auth on next request.');
+    }
+  }, delay);
+}
 
 // Restore token on startup if it's still valid
 try {
@@ -29,6 +57,8 @@ try {
     // Add 2-minute safety buffer before token expiration
     if (Date.now() < expiresAt - 120000) {
       accessToken = storedToken;
+      tokenExpiresAt = expiresAt;
+      scheduleTokenRefresh();
     }
   }
 } catch (e) {
@@ -38,6 +68,11 @@ try {
 // Clear the cached token from memory and localStorage
 function clearStoredToken(): void {
   accessToken = null;
+  tokenExpiresAt = null;
+  if (refreshTimerId) {
+    clearTimeout(refreshTimerId);
+    refreshTimerId = null;
+  }
   try {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(EXPIRES_KEY);
@@ -115,8 +150,10 @@ export const googleDriveService = {
           // Persist token with 1-hour TTL
           try {
             const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
+            tokenExpiresAt = expiresAt;
             localStorage.setItem(TOKEN_KEY, response.access_token);
             localStorage.setItem(EXPIRES_KEY, expiresAt.toString());
+            scheduleTokenRefresh();
           } catch (e) {
             console.warn('[ScoreTone] Failed to save token to localStorage', e);
           }
@@ -129,13 +166,41 @@ export const googleDriveService = {
     }
   },
 
-  // Return cached token immediately, or trigger the OAuth popup and wait for the result.
+  // Attempt a silent token refresh (no popup). Requires prior user consent.
+  async silentRefresh(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const state = Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem('st-oauth-state', state);
+
+      this.ensureTokenClient(resolve, reject).then(() => {
+        if (!tokenClient) { reject(new Error('No token client')); return; }
+        // prompt: '' = silent; will error if Google session is gone
+        tokenClient.requestAccessToken({ prompt: '', state: state });
+      }).catch(reject);
+    });
+  },
+
+  // Return cached token immediately, attempt silent refresh if expiring soon,
+  // or trigger the OAuth popup and wait for the result.
   // Must only be called from a user-gesture context the first time (browser popup policy).
   async getAccessToken(): Promise<string> {
-    if (accessToken) {
+    // Fast path: token still valid and not expiring soon
+    if (accessToken && !isTokenExpiringSoon()) {
       return accessToken;
     }
 
+    // Attempt silent refresh if user previously consented (token existed)
+    if (accessToken || tokenExpiresAt) {
+      try {
+        const token = await this.silentRefresh();
+        return token;
+      } catch {
+        // Silent refresh failed (e.g. Google session expired); fall through to interactive
+        clearStoredToken();
+      }
+    }
+
+    // Full interactive auth (requires user gesture on first call)
     return new Promise((resolve, reject) => {
       const state = Math.random().toString(36).substring(2, 15);
       sessionStorage.setItem('st-oauth-state', state);
@@ -148,7 +213,7 @@ export const googleDriveService = {
           reject(new Error('OAuth token client could not be initialized.'));
           return;
         }
-        tokenClient.requestAccessToken({ prompt: '', state: state });
+        tokenClient.requestAccessToken({ prompt: 'consent', state: state });
       }).catch(reject);
     });
   },
@@ -163,9 +228,8 @@ export const googleDriveService = {
       let q = `mimeType='application/pdf' and trashed=false`;
       if (includeFolder && DRIVE_FOLDER_ID) q += ` and '${DRIVE_FOLDER_ID}' in parents`;
       if (escapedSearch) q += ` and name contains '${escapedSearch}'`;
-      return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${
-        pageToken ? `&pageToken=${pageToken}` : ''
-      }`;
+      return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''
+        }`;
     };
 
     const doFetch = async (url: string) => {
