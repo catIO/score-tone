@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi } from 'lucide-react';
 import { storageService, type ScoreFile } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
-import { DriveFileBrowser } from './DriveFileBrowser';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 interface LibraryPageProps {
@@ -14,7 +13,6 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'local' | 'drive'>('all');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [showDriveBrowser, setShowDriveBrowser] = useState(false);
   const [driveToken, setDriveToken] = useState<string | null>(
     () => googleDriveService.getCachedToken()
   );
@@ -130,7 +128,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     try {
       const token = await googleDriveService.getAccessToken();
       setDriveToken(token);
-      setShowDriveBrowser(true);
+      const picked = await googleDriveService.openPicker(token);
+      if (picked) {
+        await handleDriveFileSelected(picked);
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Google sign-in failed.');
     } finally {
@@ -139,7 +140,6 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   };
 
   const handleDriveFileSelected = async (metadata: GoogleDriveFileMetadata) => {
-    setShowDriveBrowser(false);
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -576,13 +576,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         </footer>
       </div>
 
-      {showDriveBrowser && driveToken && (
-        <DriveFileBrowser
-          token={driveToken}
-          onSelect={handleDriveFileSelected}
-          onClose={() => setShowDriveBrowser(false)}
-        />
-      )}
+
     </div>
   );
 };

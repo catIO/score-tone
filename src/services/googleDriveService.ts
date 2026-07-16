@@ -82,6 +82,8 @@ function clearStoredToken(): void {
 }
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
+const APP_ID = import.meta.env.VITE_GOOGLE_APP_ID || '';
 export const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID || '';
 
 // Helper to dynamically load the Google Identity Services library on-demand
@@ -109,6 +111,37 @@ function loadGsiScript(): Promise<void> {
   });
 }
 
+// Load the Google Picker API via gapi
+function loadPickerApi(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.google?.picker) {
+      resolve();
+      return;
+    }
+
+    const loadGapi = (): Promise<void> => new Promise((res, rej) => {
+      if (window.gapi?.load) { res(); return; }
+      const existing = document.querySelector('script[src="https://apis.google.com/js/api.js"]');
+      if (existing) {
+        existing.addEventListener('load', () => res());
+        existing.addEventListener('error', () => rej(new Error('Failed to load gapi.')));
+        return;
+      }
+      const s = document.createElement('script');
+      s.src = 'https://apis.google.com/js/api.js';
+      s.async = true;
+      s.defer = true;
+      s.onload = () => res();
+      s.onerror = () => rej(new Error('Failed to load gapi.'));
+      document.head.appendChild(s);
+    });
+
+    loadGapi().then(() => {
+      window.gapi.load('picker', { callback: resolve, onerror: () => reject(new Error('Failed to load Picker API.')) });
+    }).catch(reject);
+  });
+}
+
 export const googleDriveService = {
   isConfigured(): boolean {
     return !!CLIENT_ID;
@@ -132,7 +165,7 @@ export const googleDriveService = {
       // Always (re-)initialize so the callback is fresh
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.readonly',
+        scope: 'https://www.googleapis.com/auth/drive.file',
         callback: (response: any) => {
           if (response.error) {
             onError(response);
@@ -201,19 +234,36 @@ export const googleDriveService = {
     }
 
     // Full interactive auth (requires user gesture on first call)
+    // First try without forcing consent — Google will only prompt if consent
+    // was revoked or never granted. This avoids the "unverified app" screen
+    // on every session when consent is still valid.
     return new Promise((resolve, reject) => {
       const state = Math.random().toString(36).substring(2, 15);
       sessionStorage.setItem('st-oauth-state', state);
 
       this.ensureTokenClient(
         (token) => resolve(token),
-        (err) => reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'))
+        (err) => {
+          // If a no-prompt attempt fails because consent is needed, retry with consent
+          if (err.error === 'consent_required' || err.error === 'interaction_required') {
+            const retryState = Math.random().toString(36).substring(2, 15);
+            sessionStorage.setItem('st-oauth-state', retryState);
+            this.ensureTokenClient(
+              (token) => resolve(token),
+              (retryErr) => reject(new Error(retryErr.error_description || retryErr.message || 'OAuth authentication failed.'))
+            ).then(() => {
+              tokenClient.requestAccessToken({ prompt: 'consent', state: retryState });
+            }).catch(reject);
+            return;
+          }
+          reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'));
+        }
       ).then(() => {
         if (!tokenClient) {
           reject(new Error('OAuth token client could not be initialized.'));
           return;
         }
-        tokenClient.requestAccessToken({ prompt: 'consent', state: state });
+        tokenClient.requestAccessToken({ prompt: '', state: state });
       }).catch(reject);
     });
   },
@@ -326,6 +376,53 @@ export const googleDriveService = {
       modifiedTime: data.modifiedTime,
       thumbnailLink: data.thumbnailLink
     };
+  },
+
+  // Open Google Picker to let user select a PDF. Files chosen through the Picker
+  // are granted to the app under the drive.file scope.
+  async openPicker(token: string): Promise<GoogleDriveFileMetadata | null> {
+    await loadPickerApi();
+
+    return new Promise((resolve) => {
+      const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+        .setMimeTypes('application/pdf')
+        .setMode(window.google.picker.DocsViewMode.LIST)
+        .setLabel('My Music');
+
+      if (DRIVE_FOLDER_ID) {
+        view.setParent(DRIVE_FOLDER_ID);
+      }
+
+      // Primary view: PDFs filtered to the configured folder (or all Drive)
+      const picker = new window.google.picker.PickerBuilder()
+        .addView(view)
+        .addView(new window.google.picker.DocsView()
+          .setMimeTypes('application/pdf')
+          .setIncludeFolders(true)
+          .setSelectFolderEnabled(false)
+          .setLabel('Google Drive'))
+        .setOAuthToken(token)
+        .setDeveloperKey(API_KEY)
+        .setAppId(APP_ID)
+        .setTitle('Select a PDF score')
+        .setCallback((data: any) => {
+          if (data.action === window.google.picker.Action.PICKED) {
+            const doc = data.docs[0];
+            resolve({
+              id: doc.id,
+              name: doc.name,
+              size: doc.sizeBytes || 0,
+              modifiedTime: doc.lastEditedUtc ? new Date(doc.lastEditedUtc).toISOString() : undefined,
+              thumbnailLink: doc.iconUrl,
+            });
+          } else if (data.action === window.google.picker.Action.CANCEL) {
+            resolve(null);
+          }
+        })
+        .build();
+
+      picker.setVisible(true);
+    });
   },
 
   // Return the current in-memory token without triggering auth.
