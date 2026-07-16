@@ -216,11 +216,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       const isLandscape = containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : false;
       const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
 
-      // If we are zoomed in, let arrow keys scroll the container naturally instead of turning the page
-      if (zoom > 1.0 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-        return;
-      }
-
       const isPageTurnKey = [
         'ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter',
         'ArrowLeft', 'ArrowUp', 'PageUp'

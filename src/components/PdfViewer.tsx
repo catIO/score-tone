@@ -169,14 +169,15 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full flex flex-col select-none ${overflowClass}`}
+      tabIndex={-1}
+      className={`w-full h-full flex flex-col select-none outline-none ${overflowClass}`}
       style={{
         backgroundColor: 'var(--pdf-bg)',
         transition: 'background-color var(--transition-md)'
       }}
     >
       {scrollMode === 'single' ? (
-        <div 
+        <div
           className="flex gap-8 py-6 px-4"
           style={{
             margin: 'auto', // Centers when page fits, aligns to top-left when zoomed/overflowing so all parts can be scrolled to
