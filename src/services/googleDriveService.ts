@@ -18,9 +18,12 @@ let accessToken: string | null = null;
 let tokenClient: any = null;
 let tokenExpiresAt: number | null = null;
 let refreshTimerId: ReturnType<typeof setTimeout> | null = null;
+let loginHint: string | null = null;
+let authInFlight: Promise<string> | null = null; // deduplicate concurrent getAccessToken() calls
 
 const TOKEN_KEY = 'scoretone_google_token';
 const EXPIRES_KEY = 'scoretone_google_token_expires';
+const LOGIN_HINT_KEY = 'scoretone_google_login_hint';
 
 function isTokenExpiringSoon(bufferMs = 3 * 60 * 1000): boolean {
   if (!tokenExpiresAt) return true;
@@ -48,19 +51,22 @@ function scheduleTokenRefresh(): void {
   }, delay);
 }
 
-// Restore token on startup if it's still valid
+// Restore token and login hint on startup if still valid
 try {
   const storedToken = localStorage.getItem(TOKEN_KEY);
   const storedExpires = localStorage.getItem(EXPIRES_KEY);
   if (storedToken && storedExpires) {
     const expiresAt = parseInt(storedExpires, 10);
-    // Add 2-minute safety buffer before token expiration
+    // Always restore tokenExpiresAt so getAccessToken() can take the silentRefresh
+    // path even when the stored token is too close to expiry to use directly.
+    tokenExpiresAt = expiresAt;
+    // Add 2-minute safety buffer before using the token directly
     if (Date.now() < expiresAt - 120000) {
       accessToken = storedToken;
-      tokenExpiresAt = expiresAt;
       scheduleTokenRefresh();
     }
   }
+  loginHint = localStorage.getItem(LOGIN_HINT_KEY);
 } catch (e) {
   console.warn('[ScoreTone] Failed to restore token from localStorage', e);
 }
@@ -76,6 +82,7 @@ function clearStoredToken(): void {
   try {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(EXPIRES_KEY);
+    // Preserve loginHint across token clears so silent refresh can still identify the account
   } catch (e) {
     console.warn('[ScoreTone] Failed to clear token from localStorage', e);
   }
@@ -152,8 +159,9 @@ export const googleDriveService = {
   },
 
   // Initialize Google OAuth2 Token Client (no picker needed).
-  // Returns the initialized client or throws.
-  async ensureTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void): Promise<void> {
+  // expectedState — the state value sent with requestAccessToken; validated in the
+  // callback closure so each call site has its own isolated state (no shared storage).
+  async ensureTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void, expectedState?: string): Promise<void> {
     await loadGsiScript();
 
     if (!window.google?.accounts?.oauth2) {
@@ -172,8 +180,9 @@ export const googleDriveService = {
             return;
           }
 
-          const savedState = sessionStorage.getItem('st-oauth-state');
-          if (!response.state || response.state !== savedState) {
+          // CSRF check — compare against the closure-captured expected state,
+          // not sessionStorage, to avoid race conditions between concurrent calls.
+          if (expectedState && (!response.state || response.state !== expectedState)) {
             onError(new Error('OAuth state check failed. Possible CSRF request.'));
             return;
           }
@@ -191,6 +200,21 @@ export const googleDriveService = {
             console.warn('[ScoreTone] Failed to save token to localStorage', e);
           }
 
+          // Fetch the user's email so future silent refreshes can skip the account picker
+          if (!loginHint) {
+            fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: `Bearer ${response.access_token}` }
+            })
+              .then(r => r.ok ? r.json() : null)
+              .then(info => {
+                if (info?.email) {
+                  loginHint = info.email;
+                  try { localStorage.setItem(LOGIN_HINT_KEY, info.email); } catch { /* ignore */ }
+                }
+              })
+              .catch(() => { /* non-critical */ });
+          }
+
           onTokenFetched(response.access_token);
         }
       });
@@ -203,12 +227,11 @@ export const googleDriveService = {
   async silentRefresh(): Promise<string> {
     return new Promise((resolve, reject) => {
       const state = Math.random().toString(36).substring(2, 15);
-      sessionStorage.setItem('st-oauth-state', state);
 
-      this.ensureTokenClient(resolve, reject).then(() => {
+      this.ensureTokenClient(resolve, reject, state).then(() => {
         if (!tokenClient) { reject(new Error('No token client')); return; }
-        // prompt: '' = silent; will error if Google session is gone
-        tokenClient.requestAccessToken({ prompt: '', state: state });
+        // prompt: '' = silent; login_hint avoids account picker for multi-account users
+        tokenClient.requestAccessToken({ prompt: '', state, ...(loginHint ? { login_hint: loginHint } : {}) });
       }).catch(reject);
     });
   },
@@ -222,50 +245,61 @@ export const googleDriveService = {
       return accessToken;
     }
 
-    // Attempt silent refresh if user previously consented (token existed)
-    if (accessToken || tokenExpiresAt) {
-      try {
-        const token = await this.silentRefresh();
-        return token;
-      } catch {
-        // Silent refresh failed (e.g. Google session expired); fall through to interactive
-        clearStoredToken();
-      }
+    // Deduplicate: if an auth is already in flight (e.g. background timer racing
+    // with a user click), reuse the same promise instead of starting a second one.
+    if (authInFlight) {
+      return authInFlight;
     }
 
-    // Full interactive auth (requires user gesture on first call)
-    // First try without forcing consent — Google will only prompt if consent
-    // was revoked or never granted. This avoids the "unverified app" screen
-    // on every session when consent is still valid.
-    return new Promise((resolve, reject) => {
-      const state = Math.random().toString(36).substring(2, 15);
-      sessionStorage.setItem('st-oauth-state', state);
+    const doAuth = async (): Promise<string> => {
+      // Attempt silent refresh if user previously consented (token existed)
+      if (accessToken || tokenExpiresAt) {
+        try {
+          const token = await this.silentRefresh();
+          return token;
+        } catch {
+          // Silent refresh failed (e.g. Google session expired); fall through to interactive
+          clearStoredToken();
+        }
+      }
 
-      this.ensureTokenClient(
-        (token) => resolve(token),
-        (err) => {
-          // If a no-prompt attempt fails because consent is needed, retry with consent
-          if (err.error === 'consent_required' || err.error === 'interaction_required') {
-            const retryState = Math.random().toString(36).substring(2, 15);
-            sessionStorage.setItem('st-oauth-state', retryState);
-            this.ensureTokenClient(
-              (token) => resolve(token),
-              (retryErr) => reject(new Error(retryErr.error_description || retryErr.message || 'OAuth authentication failed.'))
-            ).then(() => {
-              tokenClient.requestAccessToken({ prompt: 'consent', state: retryState });
-            }).catch(reject);
+      // Full interactive auth (requires user gesture on first call)
+      // First try without forcing consent — Google will only prompt if consent
+      // was revoked or never granted. This avoids the "unverified app" screen
+      // on every session when consent is still valid.
+      return new Promise((resolve, reject) => {
+        const state = Math.random().toString(36).substring(2, 15);
+
+        this.ensureTokenClient(
+          (token) => resolve(token),
+          (err) => {
+            // If a no-prompt attempt fails because consent is needed, retry with consent
+            if (err.error === 'consent_required' || err.error === 'interaction_required') {
+              const retryState = Math.random().toString(36).substring(2, 15);
+              this.ensureTokenClient(
+                (token) => resolve(token),
+                (retryErr) => reject(new Error(retryErr.error_description || retryErr.message || 'OAuth authentication failed.')),
+                retryState
+              ).then(() => {
+                tokenClient.requestAccessToken({ prompt: 'consent', state: retryState, ...(loginHint ? { login_hint: loginHint } : {}) });
+              }).catch(reject);
+              return;
+            }
+            reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'));
+          },
+          state
+        ).then(() => {
+          if (!tokenClient) {
+            reject(new Error('OAuth token client could not be initialized.'));
             return;
           }
-          reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'));
-        }
-      ).then(() => {
-        if (!tokenClient) {
-          reject(new Error('OAuth token client could not be initialized.'));
-          return;
-        }
-        tokenClient.requestAccessToken({ prompt: '', state: state });
-      }).catch(reject);
-    });
+          tokenClient.requestAccessToken({ prompt: '', state, ...(loginHint ? { login_hint: loginHint } : {}) });
+        }).catch(reject);
+      });
+    };
+
+    authInFlight = doAuth().finally(() => { authInFlight = null; });
+    return authInFlight;
   },
 
   // List PDF files from Google Drive using the REST API directly (no Picker widget needed).
@@ -434,6 +468,8 @@ export const googleDriveService = {
   // Clear session token (logout/disconnect)
   logout(): void {
     clearStoredToken();
+    loginHint = null;
+    try { localStorage.removeItem(LOGIN_HINT_KEY); } catch { /* ignore */ }
     tokenClient = null;
   }
 };

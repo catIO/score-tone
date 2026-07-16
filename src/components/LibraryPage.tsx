@@ -12,6 +12,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [files, setFiles] = useState<ScoreFile[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'local' | 'drive'>('all');
   const [loading, setLoading] = useState(false);
+  const [connecting, setConnecting] = useState(false); // true only during Drive auth + picker
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [driveToken, setDriveToken] = useState<string | null>(
     () => googleDriveService.getCachedToken()
@@ -123,7 +124,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       setErrorMsg('You must be online to open files from Google Drive.');
       return;
     }
-    setLoading(true);
+    setConnecting(true);
     setErrorMsg(null);
     try {
       const token = await googleDriveService.getAccessToken();
@@ -135,7 +136,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     } catch (err: any) {
       setErrorMsg(err.message || 'Google sign-in failed.');
     } finally {
-      setLoading(false);
+      setConnecting(false);
     }
   };
 
@@ -365,7 +366,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               <>
                 <button
                   onClick={handleGoogleDrivePick}
-                  disabled={loading || !isOnline}
+                  disabled={connecting || loading || !isOnline}
                   className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold transition-colors"
                   style={{
                     background: 'var(--md-surface-2)',
@@ -384,7 +385,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                     <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
                     <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
                   </svg>
-                  {loading ? 'Connecting…' : 'Open from Google Drive'}
+                  {connecting ? 'Connecting…' : 'Open from Google Drive'}
                 </button>
               </>
             )}
