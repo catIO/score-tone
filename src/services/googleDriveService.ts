@@ -268,17 +268,18 @@ export const googleDriveService = {
       }
 
       // Full interactive auth (requires user gesture on first call)
-      // First try without forcing consent — Google will only prompt if consent
-      // was revoked or never granted. This avoids the "unverified app" screen
-      // on every session when consent is still valid.
+      // Uses default prompt (no prompt param) which shows the account picker
+      // but skips the consent/unverified-app screen if the user already granted
+      // this scope. Only falls back to prompt:'consent' when Google explicitly
+      // responds with consent_required.
       return new Promise((resolve, reject) => {
         const state = Math.random().toString(36).substring(2, 15);
 
         this.ensureTokenClient(
           (token) => resolve(token),
           (err) => {
-            // If a no-prompt attempt fails because consent is needed, retry with consent
-            if (err.error === 'consent_required' || err.error === 'interaction_required') {
+            // Only force consent screen if Google explicitly says consent is needed
+            if (err.error === 'consent_required') {
               const retryState = Math.random().toString(36).substring(2, 15);
               this.ensureTokenClient(
                 (token) => resolve(token),
@@ -297,7 +298,8 @@ export const googleDriveService = {
             reject(new Error('OAuth token client could not be initialized.'));
             return;
           }
-          tokenClient.requestAccessToken({ prompt: '', state, ...(loginHint ? { login_hint: loginHint } : {}) });
+          // Omit prompt — GIS default shows account picker but skips consent if already granted
+          tokenClient.requestAccessToken({ state, ...(loginHint ? { login_hint: loginHint } : {}) });
         }).catch(reject);
       });
     };
