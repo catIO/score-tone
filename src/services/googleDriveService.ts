@@ -224,14 +224,15 @@ export const googleDriveService = {
   },
 
   // Attempt a silent token refresh (no popup). Requires prior user consent.
+  // NOTE: State validation is intentionally omitted here because silent refresh
+  // has no redirect/popup surface vulnerable to CSRF, and some GIS implementations
+  // do not echo the state parameter in prompt:'' flows.
   async silentRefresh(): Promise<string> {
     return new Promise((resolve, reject) => {
-      const state = Math.random().toString(36).substring(2, 15);
-
-      this.ensureTokenClient(resolve, reject, state).then(() => {
+      this.ensureTokenClient(resolve, reject).then(() => {
         if (!tokenClient) { reject(new Error('No token client')); return; }
         // prompt: '' = silent; login_hint avoids account picker for multi-account users
-        tokenClient.requestAccessToken({ prompt: '', state, ...(loginHint ? { login_hint: loginHint } : {}) });
+        tokenClient.requestAccessToken({ prompt: '', ...(loginHint ? { login_hint: loginHint } : {}) });
       }).catch(reject);
     });
   },
@@ -258,8 +259,11 @@ export const googleDriveService = {
           const token = await this.silentRefresh();
           return token;
         } catch {
-          // Silent refresh failed (e.g. Google session expired); fall through to interactive
-          clearStoredToken();
+          // Silent refresh failed (e.g. Google session expired); fall through to interactive.
+          // Only clear the in-memory token — preserve localStorage loginHint and
+          // tokenExpiresAt so that after interactive re-auth, subsequent silent
+          // refreshes still know the account.
+          accessToken = null;
         }
       }
 
