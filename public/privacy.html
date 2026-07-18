@@ -71,7 +71,7 @@
               
               <div class="space-y-4 text-[#CEC5B8]">
                 <p>
-                  <strong>Data Access & Collection:</strong> Score Tone requests OAuth permission to access sheet music files stored in your Google Drive using the <code class="text-[#FFB74D]">https://www.googleapis.com/auth/drive.file</code> scope. This scope is used to display the Google Picker, allowing you to browse and select which scores to open. We only access the specific metadata and content of files you select.
+                  <strong>Data Access & Collection:</strong> Score Tone requests OAuth permission to access sheet music files stored in your Google Drive using the <code class="text-[#FFB74D]">https://www.googleapis.com/auth/drive.file</code> and <code class="text-[#FFB74D]">https://www.googleapis.com/auth/userinfo.email</code> scopes. The Drive scope is used to display the Google Picker, allowing you to browse and select which scores to open. The email scope is used to retrieve your email address, which is saved locally as a login hint to streamline future silent authentication requests. We only access the specific metadata and content of files you select.
                 </p>
                 <p>
                   <strong>Data Usage:</strong> We use your Google user data solely to download and render the PDF music scores in your local browser session as requested. We do not use this data for advertising, marketing, profiling, or any other business purpose.

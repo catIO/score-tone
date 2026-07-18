@@ -173,7 +173,7 @@ export const googleDriveService = {
       // Always (re-)initialize so the callback is fresh
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
         callback: (response: any) => {
           if (response.error) {
             onError(response);

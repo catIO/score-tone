@@ -29,7 +29,7 @@ ScoreTone is a high-performance, tablet-friendly Progressive Web App (PWA) desig
 4. **Secure Google Drive Loader**
    * Connect and select files from Google Drive using the secure Google Picker API.
    * OAuth access tokens are kept purely in-memory and are never written to `localStorage`.
-   * Requests only the narrowest possible permission scope (`drive.file`).
+   * Requests only the minimum necessary permission scopes (`drive.file` and `userinfo.email`).
 
 ---
 
@@ -80,7 +80,7 @@ To enable Google Drive Picker loading, follow these steps in your [Google Cloud 
 ### 2. Configure OAuth Consent Screen
 1. Navigate to **APIs & Services > OAuth consent screen**.
 2. Select **External** user type and configure app details.
-3. In the **Scopes** page, add the scope `https://www.googleapis.com/auth/drive.file` (this scope restricts authorization only to files selected by the user via the Picker, ensuring privacy).
+3. In the **Scopes** page, add the scopes `https://www.googleapis.com/auth/drive.file` (to browse and open selected scores) and `https://www.googleapis.com/auth/userinfo.email` (to retrieve the user's email for login hints).
 4. If your app is in "Testing" publishing status, add your Google account email to the **Test Users** list.
 
 ### 3. Create OAuth Client Credentials
