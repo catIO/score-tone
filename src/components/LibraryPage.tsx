@@ -5,7 +5,7 @@ import { googleDriveService, type GoogleDriveFileMetadata } from '../services/go
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 interface LibraryPageProps {
-  onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob) => void;
+  onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number) => void;
 }
 
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
@@ -236,7 +236,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   // Intercept library list clicks for Drive files that aren't offline-cached.
   // We download the blob here (in a user-gesture context) rather than deferring
   // to ViewerPage's useEffect, where browser popup policy blocks the OAuth call.
-  const handleFileClick = async (file: ScoreFile) => {
+  const handleFileClick = async (file: ScoreFile, page?: number) => {
     if (file.source === 'local' && !file.offline) {
       // Legacy local file without a cached blob — ask user to re-upload it
       setErrorMsg(`"${file.name}" needs to be re-uploaded. Drop the PDF again to reopen it.`);
@@ -244,7 +244,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     }
     if (file.source !== 'google-drive' || file.offline) {
       // Local files (offline) and offline-cached Drive files: open from IndexedDB
-      onOpenFile(file);
+      onOpenFile(file, undefined, page);
       return;
     }
     if (!isOnline) {
@@ -257,7 +257,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       const token = driveToken || await googleDriveService.getAccessToken();
       if (!driveToken) setDriveToken(token);
       const blob = await googleDriveService.downloadFile(file.id, token);
-      onOpenFile(file, blob);
+      onOpenFile(file, blob, page);
     } catch (err: any) {
       setErrorMsg('Failed to open from Google Drive: ' + err.message);
     } finally {
@@ -485,6 +485,36 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                       <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
                         {[formatSize(file.size), `p.${file.lastPage}`, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
                       </p>
+                      {file.bookmarks && file.bookmarks.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {[...file.bookmarks]
+                            .sort((a, b) => a.page - b.page)
+                            .map(bm => (
+                              <button
+                                key={bm.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleFileClick(file, bm.page);
+                                }}
+                                className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                                style={{
+                                  background: 'rgba(255, 183, 77, 0.12)',
+                                  color: 'var(--md-primary)',
+                                  border: '1px solid rgba(255, 183, 77, 0.2)'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.background = 'rgba(255, 183, 77, 0.22)';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.background = 'rgba(255, 183, 77, 0.12)';
+                                }}
+                              >
+                                <span className="material-symbols-outlined text-[10px] leading-none">bookmark</span>
+                                {bm.name} <span className="opacity-60 font-normal">(p.{bm.page})</span>
+                              </button>
+                            ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Offline chip */}

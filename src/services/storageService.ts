@@ -1,5 +1,12 @@
 import Dexie, { type Table } from 'dexie';
 
+export interface Bookmark {
+  id: string;
+  name: string;
+  page: number;
+  createdAt: number;
+}
+
 export interface ScoreFile {
   id: string; // Google Drive File ID or a generated UUID for local files
   name: string;
@@ -10,6 +17,7 @@ export interface ScoreFile {
   size?: number; // size in bytes
   modifiedTime?: string; // from Google Drive
   thumbnail?: string; // base64 or link from Drive
+  bookmarks?: Bookmark[];
 }
 
 export interface ScoreFileData {

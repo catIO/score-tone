@@ -9,8 +9,10 @@ interface ViewerToolbarProps {
   onBack: () => void;
   onToggleDisplay: () => void;
   onToggleSettings: () => void;
+  onToggleBookmarks: () => void;
   isDisplayOpen: boolean;
   isSettingsOpen: boolean;
+  isBookmarksOpen: boolean;
   onSaveOffline: () => void;
   zoom: number;
   onZoomIn: () => void;
@@ -21,8 +23,8 @@ interface ViewerToolbarProps {
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   file, currentPage, totalPages,
   onPageChange, onBack,
-  onToggleDisplay, onToggleSettings,
-  isDisplayOpen, isSettingsOpen,
+  onToggleDisplay, onToggleSettings, onToggleBookmarks,
+  isDisplayOpen, isSettingsOpen, isBookmarksOpen,
   onSaveOffline,
   zoom, onZoomIn, onZoomOut, onZoomReset
 }) => {
@@ -234,6 +236,15 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
             </div>
           )}
         </div>
+
+        <button
+          onClick={onToggleBookmarks}
+          className={`md-icon-btn ${isBookmarksOpen ? 'active' : ''}`}
+          title="Bookmarks"
+          style={{ width: 36, height: 36 }}
+        >
+          <span className="material-symbols-outlined text-[20px] leading-none">bookmark</span>
+        </button>
 
         <button
           onClick={onToggleDisplay}

@@ -8,6 +8,7 @@ import ViewerToolbar from './ViewerToolbar';
 import PdfViewer from './PdfViewer';
 import DisplayControls from './DisplayControls';
 import SettingsPanel from './SettingsPanel';
+import BookmarksPanel from './BookmarksPanel';
 import SvgFilters from './SvgFilters';
 import { googleDriveService } from '../services/googleDriveService';
 import { useWakeLock } from '../hooks/useWakeLock';
@@ -43,6 +44,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const [toolbarVisible, setToolbarVisible] = useState<boolean>(false);
   const [isDisplayOpen, setIsDisplayOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isBookmarksOpen, setIsBookmarksOpen] = useState<boolean>(false);
 
   // Active filter state
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
@@ -192,17 +194,17 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const handleHotZoneLeave = useCallback(() => {
     // Keep toolbar open if a side panel is open
-    if (isDisplayOpen || isSettingsOpen) return;
+    if (isDisplayOpen || isSettingsOpen || isBookmarksOpen) return;
     hideTimerRef.current = window.setTimeout(() => setToolbarVisible(false), 600);
-  }, [isDisplayOpen, isSettingsOpen]);
+  }, [isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
 
   // Keep toolbar visible while a panel is open
   useEffect(() => {
-    if (isDisplayOpen || isSettingsOpen) {
+    if (isDisplayOpen || isSettingsOpen || isBookmarksOpen) {
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
       setToolbarVisible(true);
     }
-  }, [isDisplayOpen, isSettingsOpen]);
+  }, [isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
 
   // Keyboard Navigation & Bluetooth turn pedals
   useEffect(() => {
@@ -329,10 +331,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     const target = e.target as HTMLElement;
 
     // Click outside sidebars to close them
-    if (isDisplayOpen || isSettingsOpen) {
+    if (isDisplayOpen || isSettingsOpen || isBookmarksOpen) {
       if (!target.closest('.sidebar-control-panel') && !target.closest('.md-top-bar')) {
         setIsDisplayOpen(false);
         setIsSettingsOpen(false);
+        setIsBookmarksOpen(false);
         return; // Consume click to prevent accidental page turn
       }
     }
@@ -348,6 +351,40 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       handlePageChange(Math.max(1, currentPage - step));
     } else if (clientX > offsetWidth - boundary) {
       handlePageChange(Math.min(totalPages, currentPage + step));
+    }
+  };
+
+  const handleAddBookmark = async (name: string, page: number) => {
+    const existing = file.bookmarks || [];
+    const newBookmark = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      page,
+      createdAt: Date.now(),
+    };
+    const updatedFile = {
+      ...file,
+      bookmarks: [...existing, newBookmark],
+    };
+    try {
+      await storageService.saveFileMetadata(updatedFile);
+      onFileMetadataUpdated?.(updatedFile);
+    } catch (err) {
+      console.warn('Failed to add bookmark', err);
+    }
+  };
+
+  const handleDeleteBookmark = async (id: string) => {
+    const existing = file.bookmarks || [];
+    const updatedFile = {
+      ...file,
+      bookmarks: existing.filter(bm => bm.id !== id),
+    };
+    try {
+      await storageService.saveFileMetadata(updatedFile);
+      onFileMetadataUpdated?.(updatedFile);
+    } catch (err) {
+      console.warn('Failed to delete bookmark', err);
     }
   };
 
@@ -454,10 +491,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             totalPages={totalPages}
             onPageChange={handlePageChange}
             onBack={onBack}
-            onToggleDisplay={() => { setIsDisplayOpen(p => !p); setIsSettingsOpen(false); }}
-            onToggleSettings={() => { setIsSettingsOpen(p => !p); setIsDisplayOpen(false); }}
+            onToggleDisplay={() => { setIsDisplayOpen(p => !p); setIsSettingsOpen(false); setIsBookmarksOpen(false); }}
+            onToggleSettings={() => { setIsSettingsOpen(p => !p); setIsDisplayOpen(false); setIsBookmarksOpen(false); }}
+            onToggleBookmarks={() => { setIsBookmarksOpen(p => !p); setIsDisplayOpen(false); setIsSettingsOpen(false); }}
             isDisplayOpen={isDisplayOpen}
             isSettingsOpen={isSettingsOpen}
+            isBookmarksOpen={isBookmarksOpen}
             onSaveOffline={handleSaveOffline}
             zoom={zoom}
             onZoomIn={zoomIn}
@@ -527,6 +566,30 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           onClose={() => setIsSettingsOpen(false)}
           wakeLockActive={wakeLock.isActive}
           wakeLockSupported={wakeLock.isSupported}
+        />
+      </div>
+
+      {/* Bookmarks sidebar */}
+      <div
+        className="sidebar-control-panel absolute right-0 bottom-0 overflow-y-auto"
+        style={{
+          top: 64,
+          width: 288,
+          background: 'var(--md-surface-2)',
+          borderLeft: '1px solid var(--md-outline-variant)',
+          padding: '16px',
+          transform: isBookmarksOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 250ms ease',
+          zIndex: 60
+        }}
+      >
+        <BookmarksPanel
+          bookmarks={file.bookmarks || []}
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          onAddBookmark={handleAddBookmark}
+          onDeleteBookmark={handleDeleteBookmark}
+          onClose={() => setIsBookmarksOpen(false)}
         />
       </div>
 
