@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi } from 'lucide-react';
+import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi, X } from 'lucide-react';
 import { storageService, type ScoreFile } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
@@ -17,6 +17,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [driveToken, setDriveToken] = useState<string | null>(
     () => googleDriveService.getCachedToken()
   );
+  const [showAboutModal, setShowAboutModal] = useState(false);
   // Share dropdown state: tracks which card's menu is open and which item was just copied
   const [openShareId, setOpenShareId] = useState<string | null>(null);
   const [copiedState, setCopiedState] = useState<{ id: string; type: 'score' | 'page' } | null>(null);
@@ -309,14 +310,19 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
+          <button
+            onClick={() => setShowAboutModal(true)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
             style={{
-              background: isOnline ? 'rgba(55,120,60,0.2)' : 'rgba(200,120,0,0.15)',
-              color: isOnline ? '#81C784' : 'var(--md-primary)',
-            }}>
-            {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
-            {isOnline ? 'Online' : 'Offline'}
-          </div>
+              background: 'var(--md-surface-2)',
+              color: 'var(--md-on-surface-variant)',
+              border: '1px solid var(--md-outline-variant)'
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-3)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
+          >
+            About
+          </button>
         </div>
 
         {/* ── Error banner ── */}
@@ -406,21 +412,33 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                 My Library
               </p>
 
-              {/* Tabs */}
-              <div className="flex rounded-full overflow-hidden" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
-                {tabs.map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className="px-4 py-1.5 text-xs font-semibold transition-colors"
-                    style={{
-                      background: activeTab === tab.key ? 'var(--md-primary-container)' : 'transparent',
-                      color: activeTab === tab.key ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
+              <div className="flex items-center gap-3">
+                {/* Online/Offline status pill */}
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
+                  style={{
+                    background: isOnline ? 'rgba(55,120,60,0.2)' : 'rgba(200,120,0,0.15)',
+                    color: isOnline ? '#81C784' : 'var(--md-primary)',
+                  }}>
+                  {isOnline ? <Wifi className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
+                  {isOnline ? 'Online' : 'Offline'}
+                </div>
+
+                {/* Tabs */}
+                <div className="flex rounded-full overflow-hidden" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
+                  {tabs.map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveTab(tab.key)}
+                      className="px-4 py-1.5 text-xs font-semibold transition-colors"
+                      style={{
+                        background: activeTab === tab.key ? 'var(--md-primary-container)' : 'transparent',
+                        color: activeTab === tab.key ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -577,7 +595,67 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         </footer>
       </div>
 
+      {/* About Modal */}
+      {showAboutModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAboutModal(false); }}
+        >
+          <div
+            className="flex flex-col rounded-2xl overflow-hidden max-w-md w-full max-h-[85vh]"
+            style={{
+              background: 'var(--md-surface-3)',
+              border: '1px solid var(--md-outline-variant)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+            }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4"
+              style={{ borderBottom: '1px solid var(--md-outline-variant)' }}>
+              <h2 className="text-base font-bold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
+                About Score Tone
+              </h2>
+              <button
+                onClick={() => setShowAboutModal(false)}
+                className="p-1 rounded-full hover:bg-black/10 transition-colors"
+                style={{ color: 'var(--md-on-surface-variant)' }}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex flex-col gap-4 text-xs leading-relaxed" style={{ color: 'var(--md-on-surface-variant)' }}>
+              <p>
+                Score Tone is a modern, privacy-focused sheet music viewer designed to show your music in the perfect light.
+              </p>
+              <div className="flex flex-col gap-2.5">
+                <div className="flex gap-2">
+                  <span className="text-amber-500 font-bold">•</span>
+                  <span><strong>Visual Comfort:</strong> Adjust Sepia, Paper Warmth, Ink Darkness, Contrast, and Background Colors (Ivory, Sepia Cream, Soft Black, Charcoal) for any performance lighting.</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-amber-500 font-bold">•</span>
+                  <span><strong>Offline Library:</strong> Save scores securely in your browser's IndexedDB for complete offline access.</span>
+                </div>
+                <div className="flex gap-2">
+                  <span className="text-amber-500 font-bold">•</span>
+                  <span><strong>Secure Sharing:</strong> Generate page-specific navigation links to collaborate on annotations and positions instantly.</span>
+                </div>
+              </div>
+              <div className="border-t pt-4" style={{ borderColor: 'var(--md-outline-variant)' }}>
+                <h3 className="font-semibold mb-1" style={{ color: 'var(--md-on-surface)' }}>Google Drive Integration</h3>
+                <p>
+                  Connecting Google Drive allows you to search and select PDF scores using the secure, Google-hosted Picker interface.
+                  We request narrow read-only access to selected files (<code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>drive.file</code>) to retrieve and display your chosen PDF files.
+                  Your files are processed entirely client-side, and your access token is stored temporarily in <code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>sessionStorage</code> (which is discarded when you close the tab).
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

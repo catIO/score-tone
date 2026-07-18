@@ -53,8 +53,8 @@ function scheduleTokenRefresh(): void {
 
 // Restore token and login hint on startup if still valid
 try {
-  const storedToken = localStorage.getItem(TOKEN_KEY);
-  const storedExpires = localStorage.getItem(EXPIRES_KEY);
+  const storedToken = sessionStorage.getItem(TOKEN_KEY);
+  const storedExpires = sessionStorage.getItem(EXPIRES_KEY);
   if (storedToken && storedExpires) {
     const expiresAt = parseInt(storedExpires, 10);
     // Always restore tokenExpiresAt so getAccessToken() can take the silentRefresh
@@ -68,10 +68,10 @@ try {
   }
   loginHint = localStorage.getItem(LOGIN_HINT_KEY);
 } catch (e) {
-  console.warn('[ScoreTone] Failed to restore token from localStorage', e);
+  console.warn('[ScoreTone] Failed to restore token from sessionStorage', e);
 }
 
-// Clear the cached token from memory and localStorage
+// Clear the cached token from memory and sessionStorage
 function clearStoredToken(): void {
   accessToken = null;
   tokenExpiresAt = null;
@@ -80,11 +80,11 @@ function clearStoredToken(): void {
     refreshTimerId = null;
   }
   try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(EXPIRES_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(EXPIRES_KEY);
     // Preserve loginHint across token clears so silent refresh can still identify the account
   } catch (e) {
-    console.warn('[ScoreTone] Failed to clear token from localStorage', e);
+    console.warn('[ScoreTone] Failed to clear token from sessionStorage', e);
   }
 }
 
@@ -189,15 +189,15 @@ export const googleDriveService = {
 
           accessToken = response.access_token;
 
-          // Persist token with 1-hour TTL
+          // Persist token with 1-hour TTL in sessionStorage
           try {
             const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
             tokenExpiresAt = expiresAt;
-            localStorage.setItem(TOKEN_KEY, response.access_token);
-            localStorage.setItem(EXPIRES_KEY, expiresAt.toString());
+            sessionStorage.setItem(TOKEN_KEY, response.access_token);
+            sessionStorage.setItem(EXPIRES_KEY, expiresAt.toString());
             scheduleTokenRefresh();
           } catch (e) {
-            console.warn('[ScoreTone] Failed to save token to localStorage', e);
+            console.warn('[ScoreTone] Failed to save token to sessionStorage', e);
           }
 
           // Fetch the user's email so future silent refreshes can skip the account picker
