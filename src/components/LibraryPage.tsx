@@ -628,7 +628,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto flex flex-col gap-4 text-xs leading-relaxed" style={{ color: 'var(--md-on-surface-variant)' }}>
               <p>
-                Score Tone is a modern, privacy-focused sheet music viewer designed to show your music in the perfect light.
+                Score Tone is a modern, privacy-focused sheet music viewer.
+                It is a part of the <a href="https://practice-mate.app" target="_blank" rel="noopener noreferrer" className="text-amber-500 hover:underline font-semibold">Practice Mate</a> ecosystem, helping musicians practice and manage their repertoire.
               </p>
               <div className="flex flex-col gap-2.5">
                 <div className="flex gap-2">
@@ -641,7 +642,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                 </div>
                 <div className="flex gap-2">
                   <span className="text-amber-500 font-bold">•</span>
-                  <span><strong>Secure Sharing:</strong> Generate page-specific navigation links to collaborate on annotations and positions instantly.</span>
+                  <span><strong>Page Sharing:</strong> Generate page-specific links to share your currently viewed score and page directly with others.</span>
                 </div>
               </div>
               <div className="border-t pt-4" style={{ borderColor: 'var(--md-outline-variant)' }}>
