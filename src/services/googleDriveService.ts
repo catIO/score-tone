@@ -52,12 +52,11 @@ function scheduleTokenRefresh(): void {
 }
 
 // Restore token and login hint on startup if still valid.
-// Token lives in sessionStorage (tab-scoped). Cross-tab auth is handled by
-// silentRefresh() which uses Google's own HttpOnly session cookie — no need
-// to persist the access token to localStorage.
+// Token is persisted in localStorage to enable seamless cross-tab link opening
+// without triggering programmatic popup blockers.
 try {
-  const storedToken = sessionStorage.getItem(TOKEN_KEY);
-  const storedExpires = sessionStorage.getItem(EXPIRES_KEY);
+  const storedToken = localStorage.getItem(TOKEN_KEY);
+  const storedExpires = localStorage.getItem(EXPIRES_KEY);
   if (storedToken && storedExpires) {
     const expiresAt = parseInt(storedExpires, 10);
     // Always restore tokenExpiresAt so getAccessToken() can take the silentRefresh
@@ -71,10 +70,10 @@ try {
   }
   loginHint = localStorage.getItem(LOGIN_HINT_KEY);
 } catch (e) {
-  console.warn('[ScoreTone] Failed to restore token from sessionStorage', e);
+  console.warn('[ScoreTone] Failed to restore token from localStorage', e);
 }
 
-// Clear the cached token from memory and sessionStorage
+// Clear the cached token from memory and localStorage
 function clearStoredToken(): void {
   accessToken = null;
   tokenExpiresAt = null;
@@ -83,11 +82,11 @@ function clearStoredToken(): void {
     refreshTimerId = null;
   }
   try {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(EXPIRES_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(EXPIRES_KEY);
     // Preserve loginHint across token clears so silent refresh can still identify the account
   } catch (e) {
-    console.warn('[ScoreTone] Failed to clear token from sessionStorage', e);
+    console.warn('[ScoreTone] Failed to clear token from localStorage', e);
   }
 }
 
@@ -196,16 +195,15 @@ export const googleDriveService = {
 
           accessToken = response.access_token;
 
-          // Persist token for this tab's lifetime in sessionStorage.
-          // New tabs use silentRefresh() via Google's session cookie instead.
+          // Persist token in localStorage so other tabs can load it without popups
           try {
             const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
             tokenExpiresAt = expiresAt;
-            sessionStorage.setItem(TOKEN_KEY, response.access_token);
-            sessionStorage.setItem(EXPIRES_KEY, expiresAt.toString());
+            localStorage.setItem(TOKEN_KEY, response.access_token);
+            localStorage.setItem(EXPIRES_KEY, expiresAt.toString());
             scheduleTokenRefresh();
           } catch (e) {
-            console.warn('[ScoreTone] Failed to save token to sessionStorage', e);
+            console.warn('[ScoreTone] Failed to save token to localStorage', e);
           }
 
           // Fetch the user's email so future silent refreshes can skip the account picker
@@ -276,8 +274,8 @@ export const googleDriveService = {
     }
 
     const doAuth = async (): Promise<string> => {
-      // Attempt silent refresh if user previously consented (token existed) or if interactive is disabled (e.g. on page load check)
-      if (accessToken || tokenExpiresAt || !allowInteractive) {
+      // Attempt silent refresh if user previously consented (token existed)
+      if (accessToken || tokenExpiresAt) {
         try {
           const token = await this.silentRefresh();
           return token;
