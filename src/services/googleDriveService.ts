@@ -276,8 +276,8 @@ export const googleDriveService = {
     }
 
     const doAuth = async (): Promise<string> => {
-      // Attempt silent refresh if user previously consented (token existed)
-      if (accessToken || tokenExpiresAt) {
+      // Attempt silent refresh if user previously consented (token existed) or if interactive is disabled (e.g. on page load check)
+      if (accessToken || tokenExpiresAt || !allowInteractive) {
         try {
           const token = await this.silentRefresh();
           return token;
