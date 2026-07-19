@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import type { Bookmark } from '../services/storageService';
+import type { Bookmark, ScoreFile } from '../services/storageService';
 
 interface BookmarksPanelProps {
+  file: ScoreFile;
   bookmarks: Bookmark[];
   currentPage: number;
   onPageChange: (page: number) => void;
@@ -11,6 +12,7 @@ interface BookmarksPanelProps {
 }
 
 export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
+  file,
   bookmarks = [],
   currentPage,
   onPageChange,
@@ -19,12 +21,27 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
   onClose,
 }) => {
   const [newBookmarkName, setNewBookmarkName] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleAddSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBookmarkName.trim()) return;
     onAddBookmark(newBookmarkName.trim(), currentPage);
     setNewBookmarkName('');
+  };
+
+  const handleCopyLink = (bm: Bookmark, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const linkUrl = file.source === 'google-drive'
+      ? `${window.location.origin}/?driveId=${file.id}&name=${encodeURIComponent(file.name)}&page=${bm.page}`
+      : `${window.location.origin}/?view=${file.id}&page=${bm.page}`;
+
+    navigator.clipboard.writeText(linkUrl).then(() => {
+      setCopiedId(bm.id);
+      setTimeout(() => {
+        setCopiedId(null);
+      }, 1500);
+    });
   };
 
   const sortedBookmarks = [...bookmarks].sort((a, b) => a.page - b.page);
@@ -155,26 +172,50 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                     Page {bm.page}
                   </span>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteBookmark(bm.id);
-                  }}
-                  className="md-icon-btn"
-                  title="Delete bookmark"
-                  style={{
-                    width: 32,
-                    height: 32,
-                    color: isActive ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
-                    background: 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '50%',
-                  }}
-                >
-                  <span className="material-symbols-outlined text-[18px]">delete</span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyLink(bm, e);
+                    }}
+                    className="md-icon-btn"
+                    title={copiedId === bm.id ? "Copied!" : "Copy bookmark link"}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      color: isActive ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+                      background: 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%',
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {copiedId === bm.id ? 'check' : 'link'}
+                    </span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteBookmark(bm.id);
+                    }}
+                    className="md-icon-btn"
+                    title="Delete bookmark"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      color: isActive ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+                      background: 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%',
+                    }}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
               </div>
             );
           })

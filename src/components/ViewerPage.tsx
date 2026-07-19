@@ -584,6 +584,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         }}
       >
         <BookmarksPanel
+          file={file}
           bookmarks={file.bookmarks || []}
           currentPage={currentPage}
           onPageChange={handlePageChange}
