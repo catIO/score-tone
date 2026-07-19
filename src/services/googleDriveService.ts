@@ -161,6 +161,10 @@ export const googleDriveService = {
     return !!accessToken;
   },
 
+  isTokenExpiringSoon(bufferMs?: number): boolean {
+    return isTokenExpiringSoon(bufferMs);
+  },
+
   // Initialize Google OAuth2 Token Client (no picker needed).
   // expectedState — the state value sent with requestAccessToken; validated in the
   // callback closure so each call site has its own isolated state (no shared storage).
@@ -257,7 +261,9 @@ export const googleDriveService = {
   // Return cached token immediately, attempt silent refresh if expiring soon,
   // or trigger the OAuth popup and wait for the result.
   // Must only be called from a user-gesture context the first time (browser popup policy).
-  async getAccessToken(): Promise<string> {
+  async getAccessToken(options?: { allowInteractive?: boolean }): Promise<string> {
+    const allowInteractive = options?.allowInteractive ?? true;
+
     // Fast path: token still valid and not expiring soon
     if (accessToken && !isTokenExpiringSoon()) {
       return accessToken;
@@ -280,6 +286,10 @@ export const googleDriveService = {
           console.warn('[ScoreTone] Silent refresh failed, falling back to interactive auth:', err);
           clearStoredToken();
         }
+      }
+
+      if (!allowInteractive) {
+        throw new Error('Authentication required');
       }
 
       // Full interactive auth (requires user gesture on first call)
@@ -401,7 +411,7 @@ export const googleDriveService = {
   // Accepts an already-acquired token to avoid redundant getAccessToken() calls
   // when the caller already holds a valid token.
   async downloadFile(fileId: string, existingToken?: string): Promise<Blob> {
-    const token = existingToken || await this.getAccessToken();
+    const token = existingToken || await this.getAccessToken({ allowInteractive: false });
 
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,

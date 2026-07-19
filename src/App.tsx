@@ -54,29 +54,44 @@ export const App: React.FC = () => {
           setActivePage('viewer');
           setPendingLink(null);
         } else {
-          if (googleDriveService.hasToken()) {
-            setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : makeFileObj(undefined, false));
-            setInMemoryBlob(undefined);
+          // No cached blob - we must download the file from Google Drive.
+          // Show the loader during token acquisition and download.
+          setSilentAuthPending(true);
+          try {
+            // Get non-interactive token (reuses valid token, or silent refresh, or throws)
+            const token = await googleDriveService.getAccessToken({ allowInteractive: false });
+
+            // Download the file using the token
+            const blob = await googleDriveService.downloadFile(targetId, token);
+
+            // Success! Save file to library so it's cached/available next time
+            const fileToSave: ScoreFile = existing || {
+              id: targetId,
+              name: name.replace(/\.pdf$/i, ''),
+              source: 'google-drive',
+              lastOpened: Date.now(),
+              lastPage: linkedPage ?? 1,
+              offline: false,
+              size: blob.size,
+            };
+            if (!existing) {
+              await storageService.saveFileMetadata(fileToSave);
+            }
+
+            setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : fileToSave);
+            setInMemoryBlob(blob);
             setActivePage('viewer');
             setPendingLink(null);
-          } else {
-            // No cached token — try silent refresh via Google's session cookie before
-            // showing the sign-in gate. This handles the common case of opening a
-            // shared score link in a new tab when the user is already signed into Google.
-            setSilentAuthPending(true);
-            try {
-              await googleDriveService.silentRefresh();
-              // Silent refresh succeeded — proceed directly to the viewer
-              setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : makeFileObj(undefined, false));
-              setInMemoryBlob(undefined);
-              setActivePage('viewer');
-              setPendingLink(null);
-            } catch {
-              // Google session gone or consent revoked — show the sign-in gate
-              setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
-            } finally {
-              setSilentAuthPending(false);
+          } catch (err: any) {
+            console.warn('[ScoreTone] Silent auth or file download failed on deep link:', err);
+            // Clear token if we got a 401/Unauthorized from Google Drive API
+            if (err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized')) {
+              googleDriveService.logout();
             }
+            // Fall back to showing the user-gesture sign-in gate
+            setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
+          } finally {
+            setSilentAuthPending(false);
           }
         }
       } catch (e) {
@@ -262,7 +277,14 @@ export const App: React.FC = () => {
             Sign in with Google
           </button>
           <button
-            onClick={() => setPendingLink(null)}
+            onClick={() => {
+              setPendingLink(null);
+              // Clean up the URL query params so they aren't stuck on the deep-linked URL
+              const params = new URLSearchParams(window.location.search);
+              if (params.get('view') || params.get('driveId')) {
+                window.history.pushState({ page: 'library' }, '', window.location.origin);
+              }
+            }}
             className="md-btn-text w-full py-2 text-sm"
           >
             Go to Library
