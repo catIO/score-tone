@@ -51,7 +51,10 @@ function scheduleTokenRefresh(): void {
   }, delay);
 }
 
-// Restore token and login hint on startup if still valid
+// Restore token and login hint on startup if still valid.
+// Token lives in sessionStorage (tab-scoped). Cross-tab auth is handled by
+// silentRefresh() which uses Google's own HttpOnly session cookie — no need
+// to persist the access token to localStorage.
 try {
   const storedToken = sessionStorage.getItem(TOKEN_KEY);
   const storedExpires = sessionStorage.getItem(EXPIRES_KEY);
@@ -189,7 +192,8 @@ export const googleDriveService = {
 
           accessToken = response.access_token;
 
-          // Persist token with 1-hour TTL in sessionStorage
+          // Persist token for this tab's lifetime in sessionStorage.
+          // New tabs use silentRefresh() via Google's session cookie instead.
           try {
             const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
             tokenExpiresAt = expiresAt;

@@ -13,6 +13,7 @@ export const App: React.FC = () => {
   const [appSettings, setAppSettings] = useState<AppSettings>(settingsService.getSettings());
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [silentAuthPending, setSilentAuthPending] = useState(false);
 
   // Pending deep-link: stored until user clicks a button (needed for popup unblock)
   const [pendingLink, setPendingLink] = useState<{ driveId: string; name: string } | null>(null);
@@ -59,7 +60,23 @@ export const App: React.FC = () => {
             setActivePage('viewer');
             setPendingLink(null);
           } else {
-            setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
+            // No cached token — try silent refresh via Google's session cookie before
+            // showing the sign-in gate. This handles the common case of opening a
+            // shared score link in a new tab when the user is already signed into Google.
+            setSilentAuthPending(true);
+            try {
+              await googleDriveService.silentRefresh();
+              // Silent refresh succeeded — proceed directly to the viewer
+              setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : makeFileObj(undefined, false));
+              setInMemoryBlob(undefined);
+              setActivePage('viewer');
+              setPendingLink(null);
+            } catch {
+              // Google session gone or consent revoked — show the sign-in gate
+              setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
+            } finally {
+              setSilentAuthPending(false);
+            }
           }
         }
       } catch (e) {
@@ -180,11 +197,13 @@ export const App: React.FC = () => {
   };
 
   // Loading spinner while downloading PWA assets or importing
-  if (importing) {
+  if (importing || silentAuthPending) {
     return (
       <div className="w-screen h-screen flex flex-col items-center justify-center bg-[#0a0a0c] text-white gap-4">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="font-semibold text-sm text-slate-300">Importing shared score from Google Drive…</p>
+        <p className="font-semibold text-sm text-slate-300">
+          {silentAuthPending ? 'Opening score…' : 'Importing shared score from Google Drive…'}
+        </p>
       </div>
     );
   }
