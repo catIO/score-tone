@@ -164,11 +164,11 @@ export const googleDriveService = {
   // Initialize Google OAuth2 Token Client (no picker needed).
   // expectedState — the state value sent with requestAccessToken; validated in the
   // callback closure so each call site has its own isolated state (no shared storage).
-  async ensureTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void, expectedState?: string): Promise<void> {
-    await loadGsiScript();
-
+  ensureTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void, expectedState?: string): void {
     if (!window.google?.accounts?.oauth2) {
-      onError(new Error('Google Identity Services client not loaded.'));
+      loadGsiScript().then(() => {
+        this.ensureTokenClient(onTokenFetched, onError, expectedState);
+      }).catch(onError);
       return;
     }
 
@@ -233,11 +233,24 @@ export const googleDriveService = {
   // do not echo the state parameter in prompt:'' flows.
   async silentRefresh(): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.ensureTokenClient(resolve, reject).then(() => {
+      const initAndRequest = () => {
+        this.ensureTokenClient(
+          (token) => resolve(token),
+          (err) => {
+            clearStoredToken();
+            reject(err);
+          }
+        );
         if (!tokenClient) { reject(new Error('No token client')); return; }
         // prompt: '' = silent; login_hint avoids account picker for multi-account users
         tokenClient.requestAccessToken({ prompt: '', ...(loginHint ? { login_hint: loginHint } : {}) });
-      }).catch(reject);
+      };
+
+      if (!window.google?.accounts?.oauth2) {
+        loadGsiScript().then(initAndRequest).catch(reject);
+      } else {
+        initAndRequest();
+      }
     });
   },
 
@@ -262,12 +275,10 @@ export const googleDriveService = {
         try {
           const token = await this.silentRefresh();
           return token;
-        } catch {
+        } catch (err) {
           // Silent refresh failed (e.g. Google session expired); fall through to interactive.
-          // Only clear the in-memory token — preserve localStorage loginHint and
-          // tokenExpiresAt so that after interactive re-auth, subsequent silent
-          // refreshes still know the account.
-          accessToken = null;
+          console.warn('[ScoreTone] Silent refresh failed, falling back to interactive auth:', err);
+          clearStoredToken();
         }
       }
 
@@ -279,32 +290,38 @@ export const googleDriveService = {
       return new Promise((resolve, reject) => {
         const state = Math.random().toString(36).substring(2, 15);
 
-        this.ensureTokenClient(
-          (token) => resolve(token),
-          (err) => {
-            // Only force consent screen if Google explicitly says consent is needed
-            if (err.error === 'consent_required') {
-              const retryState = Math.random().toString(36).substring(2, 15);
-              this.ensureTokenClient(
-                (token) => resolve(token),
-                (retryErr) => reject(new Error(retryErr.error_description || retryErr.message || 'OAuth authentication failed.')),
-                retryState
-              ).then(() => {
+        const initAndRequest = () => {
+          this.ensureTokenClient(
+            (token) => resolve(token),
+            (err) => {
+              // Only force consent screen if Google explicitly says consent is needed
+              if (err.error === 'consent_required') {
+                const retryState = Math.random().toString(36).substring(2, 15);
+                this.ensureTokenClient(
+                  (token) => resolve(token),
+                  (retryErr) => reject(new Error(retryErr.error_description || retryErr.message || 'OAuth authentication failed.')),
+                  retryState
+                );
                 tokenClient.requestAccessToken({ prompt: 'consent', state: retryState, ...(loginHint ? { login_hint: loginHint } : {}) });
-              }).catch(reject);
-              return;
-            }
-            reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'));
-          },
-          state
-        ).then(() => {
+                return;
+              }
+              reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'));
+            },
+            state
+          );
+
           if (!tokenClient) {
             reject(new Error('OAuth token client could not be initialized.'));
             return;
           }
-          // Omit prompt — GIS default shows account picker but skips consent if already granted
           tokenClient.requestAccessToken({ state, ...(loginHint ? { login_hint: loginHint } : {}) });
-        }).catch(reject);
+        };
+
+        if (!window.google?.accounts?.oauth2) {
+          loadGsiScript().then(initAndRequest).catch(reject);
+        } else {
+          initAndRequest();
+        }
       });
     };
 
@@ -483,3 +500,9 @@ export const googleDriveService = {
     tokenClient = null;
   }
 };
+
+// Start loading GSI script immediately on import to ensure window.google is ready
+// and ensure ensureTokenClient can run synchronously within click event handlers.
+if (typeof window !== 'undefined') {
+  loadGsiScript().catch((err) => console.warn('[ScoreTone] Preloading GSI script failed:', err));
+}

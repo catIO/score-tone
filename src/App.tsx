@@ -103,12 +103,18 @@ export const App: React.FC = () => {
   }, []);
 
   const importSharedScore = async (driveId: string, shareName: string) => {
-    setImporting(true);
     setImportError(null);
-    setPendingLink(null);
 
     try {
-      // Check if we already have this file cached
+      // 1. Get the token FIRST, synchronously within the click event!
+      // This ensures that the popup is opened directly from the user's click gesture.
+      const token = await googleDriveService.getAccessToken();
+
+      // Only set importing and clear pending link after we successfully got the token
+      setImporting(true);
+      setPendingLink(null);
+
+      // 2. Check if we already have this file cached
       const filesList = await storageService.getFiles();
       const existing = filesList.find((f) => f.id === driveId);
       if (existing) {
@@ -120,8 +126,8 @@ export const App: React.FC = () => {
         }
       }
 
-      // Triggers OAuth popup
-      const blob = await googleDriveService.downloadFile(driveId);
+      // 3. Download the file using the token we already fetched
+      const blob = await googleDriveService.downloadFile(driveId, token);
 
       const newFile: ScoreFile = {
         id: driveId,
@@ -138,7 +144,6 @@ export const App: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to import shared Google Drive file', err);
       setImportError(err.message || 'Failed to download shared score.');
-    } finally {
       setImporting(false);
     }
   };
