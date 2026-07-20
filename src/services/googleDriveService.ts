@@ -222,6 +222,9 @@ export const googleDriveService = {
           }
 
           onTokenFetched(response.access_token);
+        },
+        error_callback: (error: any) => {
+          onError(error);
         }
       });
     } catch (err) {
@@ -307,13 +310,25 @@ export const googleDriveService = {
                 const retryState = Math.random().toString(36).substring(2, 15);
                 this.ensureTokenClient(
                   (token) => resolve(token),
-                  (retryErr) => reject(new Error(retryErr.error_description || retryErr.message || 'OAuth authentication failed.')),
+                  (retryErr) => {
+                    const errMsg = retryErr.type === 'popup_failed_to_open'
+                      ? 'Popup blocked by browser. Please allow popups for this site to sign in.'
+                      : retryErr.type === 'popup_closed'
+                      ? 'Sign-in popup closed by user.'
+                      : (retryErr.error_description || retryErr.message || 'OAuth authentication failed.');
+                    reject(new Error(errMsg));
+                  },
                   retryState
                 );
                 tokenClient.requestAccessToken({ prompt: 'consent', state: retryState, ...(loginHint ? { login_hint: loginHint } : {}) });
                 return;
               }
-              reject(new Error(err.error_description || err.message || 'OAuth authentication failed.'));
+              const errMsg = err.type === 'popup_failed_to_open'
+                ? 'Popup blocked by browser. Please allow popups for this site to sign in.'
+                : err.type === 'popup_closed'
+                ? 'Sign-in popup closed by user.'
+                : (err.error_description || err.message || 'OAuth authentication failed.');
+              reject(new Error(errMsg));
             },
             state
           );
