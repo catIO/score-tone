@@ -28,12 +28,18 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   onSaveOffline,
   zoom, onZoomIn, onZoomOut, onZoomReset
 }) => {
-  const [jumpPage, setJumpPage] = useState('');
+  const [jumpPage, setJumpPage] = useState(String(currentPage));
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [copiedScore, setCopiedScore] = useState(false);
   const [copiedPage, setCopiedPage] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Sync jumpPage value when currentPage changes externally
+  useEffect(() => {
+    setJumpPage(String(currentPage));
+  }, [currentPage]);
 
   // Close the share menu when clicking outside of it
   useEffect(() => {
@@ -79,13 +85,23 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
     }
   };
 
-  const handleJumpSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const commitPageChange = () => {
     const p = parseInt(jumpPage, 10);
     if (!isNaN(p) && p >= 1 && p <= totalPages) {
-      onPageChange(p);
-      setJumpPage('');
+      if (p !== currentPage) {
+        onPageChange(p);
+      } else {
+        setJumpPage(String(currentPage));
+      }
+    } else {
+      setJumpPage(String(currentPage));
     }
+  };
+
+  const handleJumpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    commitPageChange();
+    inputRef.current?.blur();
   };
 
   return (
@@ -126,15 +142,26 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 
         <form onSubmit={handleJumpSubmit} className="flex items-center gap-1">
           <input
+            ref={inputRef}
             type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={jumpPage}
-            placeholder={String(currentPage)}
+            onFocus={e => e.target.select()}
             onChange={e => setJumpPage(e.target.value.replace(/\D/g, ''))}
-            className="w-10 h-8 text-center text-xs font-semibold rounded focus:outline-none"
+            onBlur={commitPageChange}
+            onKeyDown={e => {
+              if (e.key === 'Escape') {
+                setJumpPage(String(currentPage));
+                inputRef.current?.blur();
+              }
+            }}
+            className="w-10 h-8 text-center text-xs font-semibold rounded focus:outline-none focus:ring-1 focus:ring-[var(--md-primary)] select-text"
             style={{
               background: 'var(--md-surface-3)',
               color: 'var(--md-on-surface)',
               border: '1px solid var(--md-outline-variant)',
+              userSelect: 'text',
             }}
           />
           <span className="text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>/ {totalPages}</span>
