@@ -423,12 +423,13 @@ export const googleDriveService = {
   // Download a Google Drive file's content as a Blob.
   // Accepts an already-acquired token to avoid redundant getAccessToken() calls
   // when the caller already holds a valid token.
-  async downloadFile(fileId: string, existingToken?: string): Promise<Blob> {
+  // Pass an AbortSignal to cancel the request (e.g. for a download timeout).
+  async downloadFile(fileId: string, existingToken?: string, signal?: AbortSignal): Promise<Blob> {
     const token = existingToken || await this.getAccessToken({ allowInteractive: false });
 
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers: { Authorization: `Bearer ${token}` }, signal }
     );
 
     if (!response.ok) {

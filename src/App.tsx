@@ -120,10 +120,25 @@ export const App: React.FC = () => {
   const importSharedScore = async (driveId: string, shareName: string) => {
     setImportError(null);
 
+    // Wrap getAccessToken in a timeout: COOP headers on Google's OAuth page can
+    // block GIS's window.closed polling, causing the auth promise to hang forever.
+    // 30 s is long enough for a real interactive popup but recovers from the deadlock.
+    const withAuthTimeout = (promise: Promise<string>, ms = 30000): Promise<string> => {
+      let timer: ReturnType<typeof setTimeout>;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(
+            'Sign-in timed out. If a popup was blocked, please allow popups for this site and try again.'
+          ));
+        }, ms);
+      });
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer!));
+    };
+
     try {
       // 1. Get the token FIRST, synchronously within the click event!
       // This ensures that the popup is opened directly from the user's click gesture.
-      const token = await googleDriveService.getAccessToken();
+      const token = await withAuthTimeout(googleDriveService.getAccessToken());
 
       // Only set importing and clear pending link after we successfully got the token
       setImporting(true);
@@ -136,13 +151,20 @@ export const App: React.FC = () => {
         const cachedBlob = await storageService.getFileData(driveId);
         if (cachedBlob) {
           handleOpenFile(existing, cachedBlob);
-          setImporting(false);
           return;
         }
       }
 
-      // 3. Download the file using the token we already fetched
-      const blob = await googleDriveService.downloadFile(driveId, token);
+      // 3. Download the file using the token we already fetched.
+      // Use an AbortController so a stalled network fetch doesn't spin forever.
+      const controller = new AbortController();
+      const downloadTimeout = setTimeout(() => controller.abort(), 2 * 60 * 1000);
+      let blob: Blob;
+      try {
+        blob = await googleDriveService.downloadFile(driveId, token, controller.signal);
+      } finally {
+        clearTimeout(downloadTimeout);
+      }
 
       const newFile: ScoreFile = {
         id: driveId,
@@ -159,6 +181,7 @@ export const App: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to import shared Google Drive file', err);
       setImportError(err.message || 'Failed to download shared score.');
+    } finally {
       setImporting(false);
     }
   };
