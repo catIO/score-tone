@@ -61,9 +61,16 @@ export const storageService = {
     return db.files.orderBy('lastOpened').reverse().toArray();
   },
 
-  // Save metadata
+  // Save metadata (merges with existing record to prevent overwriting bookmarks or other metadata)
   async saveFileMetadata(file: ScoreFile): Promise<void> {
-    await db.files.put(file);
+    const existing = await db.files.get(file.id);
+    const merged: ScoreFile = {
+      ...existing,
+      ...file,
+      bookmarks: file.bookmarks !== undefined ? file.bookmarks : existing?.bookmarks,
+      lastPage: file.lastPage ?? existing?.lastPage ?? 1,
+    };
+    await db.files.put(merged);
   },
 
   // Save PDF file data (Blob)

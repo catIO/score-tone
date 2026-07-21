@@ -134,8 +134,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           file.size !== meta.size ||
           file.thumbnail !== meta.thumbnailLink
         ) {
+          const currentFiles = await storageService.getFiles();
+          const freshFile = currentFiles.find(f => f.id === file.id) || file;
           const updatedFile = {
-            ...file,
+            ...freshFile,
             name: updatedName,
             size: meta.size,
             thumbnail: meta.thumbnailLink,

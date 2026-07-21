@@ -146,7 +146,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     setErrorMsg(null);
     try {
       const token = driveToken || await googleDriveService.getAccessToken();
-      const existing = files.find(f => f.id === metadata.id);
+      const currentFiles = await storageService.getFiles();
+      const existing = currentFiles.find(f => f.id === metadata.id);
       if (existing) {
         existing.lastOpened = Date.now();
         existing.name = metadata.name.replace(/\.pdf$/i, '');

@@ -167,13 +167,15 @@ export const App: React.FC = () => {
       }
 
       const newFile: ScoreFile = {
+        ...existing,
         id: driveId,
         name: shareName.replace(/\.pdf$/i, ''),
         source: 'google-drive',
         lastOpened: Date.now(),
-        lastPage: 1,
-        offline: false,
-        size: blob.size
+        lastPage: existing?.lastPage ?? 1,
+        offline: existing?.offline ?? false,
+        size: blob.size,
+        ...(existing?.bookmarks ? { bookmarks: existing.bookmarks } : {})
       };
 
       await storageService.saveFileMetadata(newFile);
