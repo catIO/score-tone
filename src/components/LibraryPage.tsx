@@ -684,6 +684,15 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                   Your files are processed entirely client-side, and your access token is stored temporarily in <code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>sessionStorage</code> (which is discarded when you close the tab).
                 </p>
               </div>
+
+              <div className="border-t pt-4 flex gap-4 text-xs font-semibold" style={{ borderColor: 'var(--md-outline-variant)' }}>
+                <a href="/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--md-primary)' }} className="hover:underline">
+                  Privacy Policy
+                </a>
+                <a href="/terms.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--md-primary)' }} className="hover:underline">
+                  Terms of Service
+                </a>
+              </div>
             </div>
           </div>
         </div>
