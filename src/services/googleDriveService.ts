@@ -425,27 +425,94 @@ export const googleDriveService = {
   // when the caller already holds a valid token.
   // Pass an AbortSignal to cancel the request (e.g. for a download timeout).
   async downloadFile(fileId: string, existingToken?: string, signal?: AbortSignal): Promise<Blob> {
-    const token = existingToken || await this.getAccessToken({ allowInteractive: false });
-
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-      { headers: { Authorization: `Bearer ${token}` }, signal }
-    );
-
-    if (!response.ok) {
-      if (response.status === 401) clearStoredToken();
-      const detail = response.statusText || `HTTP ${response.status}`;
-      throw new Error(`Failed to download file from Google Drive: ${detail}`);
+    let token = existingToken;
+    if (!token) {
+      try {
+        token = await this.getAccessToken({ allowInteractive: false });
+      } catch {
+        // No cached/silent token available; proceed to public download strategies
+      }
     }
 
-    return response.blob();
+    // Strategy 1: Authenticated download using token via Drive API v3
+    if (token) {
+      try {
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+          { headers: { Authorization: `Bearer ${token}` }, signal }
+        );
+
+        if (response.ok) {
+          return await response.blob();
+        }
+
+        if (response.status === 401) clearStoredToken();
+
+        // 403 / 404 can happen when the token scope (drive.file) does not grant access
+        // to a shared link created by another user. Fall through to public download.
+        console.warn(`[ScoreTone] Authenticated download returned HTTP ${response.status}. Trying public download fallback.`);
+      } catch (err: any) {
+        if (err.name === 'AbortError') throw err;
+        console.warn('[ScoreTone] Authenticated download error:', err);
+      }
+    }
+
+    // Strategy 2: Google Drive API v3 with API key (unauthenticated request)
+    try {
+      const apiKeyParam = API_KEY ? `&key=${API_KEY}` : '';
+      const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media${apiKeyParam}`,
+        { signal }
+      );
+      if (response.ok) {
+        return await response.blob();
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') throw err;
+    }
+
+    // Strategy 3: Google Drive Media CDN for public files (lh3.googleusercontent.com)
+    try {
+      const response = await fetch(`https://lh3.googleusercontent.com/d/${fileId}`, { signal });
+      if (response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('text/html')) {
+          return await response.blob();
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') throw err;
+    }
+
+    // Strategy 4: Google Drive public direct export (uc?export=download)
+    try {
+      const response = await fetch(`https://docs.google.com/uc?export=download&id=${fileId}&confirm=t`, { signal });
+      if (response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('text/html')) {
+          return await response.blob();
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') throw err;
+    }
+
+    throw new Error(
+      'Failed to download file from Google Drive: HTTP 403. Please verify that the file sharing setting in Google Drive is set to "Anyone with the link" or that your account has access.'
+    );
   },
 
   // Fetch updated metadata for a single file on Google Drive
-  async getFileMetadata(fileId: string, token: string): Promise<GoogleDriveFileMetadata> {
+  async getFileMetadata(fileId: string, token?: string | null): Promise<GoogleDriveFileMetadata> {
+    const apiKeyParam = API_KEY ? `&key=${API_KEY}` : '';
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,thumbnailLink`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,thumbnailLink${apiKeyParam}`,
+      { headers }
     );
 
     if (!response.ok) {

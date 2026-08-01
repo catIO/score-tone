@@ -58,10 +58,15 @@ export const App: React.FC = () => {
           // Show the loader during token acquisition and download.
           setSilentAuthPending(true);
           try {
-            // Get non-interactive token (reuses valid token, or silent refresh, or throws)
-            const token = await googleDriveService.getAccessToken({ allowInteractive: false });
+            // Get non-interactive token if available (reuses valid token or silent refresh)
+            let token: string | undefined;
+            try {
+              token = await googleDriveService.getAccessToken({ allowInteractive: false });
+            } catch {
+              // No valid stored token — downloadFile will attempt unauthenticated public download
+            }
 
-            // Download the file using the token
+            // Download the file using token if available, or via public download strategies
             const blob = await googleDriveService.downloadFile(targetId, token);
 
             // Success! Save file to library so it's cached/available next time
@@ -83,7 +88,7 @@ export const App: React.FC = () => {
             setActivePage('viewer');
             setPendingLink(null);
           } catch (err: any) {
-            console.warn('[ScoreTone] Silent auth or file download failed on deep link:', err);
+            console.warn('[ScoreTone] Deep link download failed:', err);
             // Clear token if we got a 401/Unauthorized from Google Drive API
             if (err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized')) {
               googleDriveService.logout();
