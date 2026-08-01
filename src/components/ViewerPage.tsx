@@ -96,6 +96,9 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           // 3. Fallback: If it's a Google Drive file, try to download it on-the-fly
           if (file.source === 'google-drive') {
             pdfData = await googleDriveService.downloadFile(file.id);
+            if (pdfData) {
+              await storageService.cacheFileOffline(file, pdfData).catch(() => {});
+            }
           } else if (file.source === 'local') {
             throw new Error('Local temporary file has expired. Please reload it from the library.');
           }

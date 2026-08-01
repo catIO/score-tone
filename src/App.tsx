@@ -69,19 +69,19 @@ export const App: React.FC = () => {
             // Download the file using token if available, or via public download strategies
             const blob = await googleDriveService.downloadFile(targetId, token);
 
-            // Success! Save file to library so it's cached/available next time
-            const fileToSave: ScoreFile = existing || {
-              id: targetId,
-              name: name.replace(/\.pdf$/i, ''),
-              source: 'google-drive',
-              lastOpened: Date.now(),
-              lastPage: linkedPage ?? 1,
-              offline: false,
-              size: blob.size,
-            };
-            if (!existing) {
-              await storageService.saveFileMetadata(fileToSave);
-            }
+            // Success! Auto-cache file in IndexedDB so it's instantly available next time
+            const fileToSave: ScoreFile = existing
+              ? { ...existing, lastOpened: Date.now(), offline: true, size: blob.size }
+              : {
+                id: targetId,
+                name: name.replace(/\.pdf$/i, ''),
+                source: 'google-drive',
+                lastOpened: Date.now(),
+                lastPage: linkedPage ?? 1,
+                offline: true,
+                size: blob.size,
+              };
+            await storageService.cacheFileOffline(fileToSave, blob);
 
             setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : fileToSave);
             setInMemoryBlob(blob);
@@ -178,12 +178,12 @@ export const App: React.FC = () => {
         source: 'google-drive',
         lastOpened: Date.now(),
         lastPage: existing?.lastPage ?? 1,
-        offline: existing?.offline ?? false,
+        offline: true,
         size: blob.size,
         ...(existing?.bookmarks ? { bookmarks: existing.bookmarks } : {})
       };
 
-      await storageService.saveFileMetadata(newFile);
+      await storageService.cacheFileOffline(newFile, blob);
       handleOpenFile(newFile, blob);
     } catch (err: any) {
       console.error('Failed to import shared Google Drive file', err);

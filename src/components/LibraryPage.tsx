@@ -145,38 +145,45 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const token = driveToken || await googleDriveService.getAccessToken();
+      const token = driveToken || await googleDriveService.getAccessToken().catch(() => undefined);
       const currentFiles = await storageService.getFiles();
       const existing = currentFiles.find(f => f.id === metadata.id);
-      if (existing) {
-        existing.lastOpened = Date.now();
-        existing.name = metadata.name.replace(/\.pdf$/i, '');
-        existing.size = metadata.size;
-        existing.thumbnail = metadata.thumbnailLink;
-        await storageService.saveFileMetadata(existing);
+
+      const cachedBlob = await storageService.getFileData(metadata.id);
+      if (cachedBlob) {
+        const fileToOpen: ScoreFile = existing
+          ? { ...existing, lastOpened: Date.now(), offline: true, size: metadata.size, thumbnail: metadata.thumbnailLink }
+          : {
+            id: metadata.id,
+            name: metadata.name.replace(/\.pdf$/i, ''),
+            source: 'google-drive',
+            lastOpened: Date.now(),
+            lastPage: 1,
+            offline: true,
+            size: metadata.size,
+            thumbnail: metadata.thumbnailLink
+          };
+        await storageService.saveFileMetadata(fileToOpen);
         await loadFiles();
         setLoading(false);
-        if (existing.offline) {
-          onOpenFile(existing);
-        } else {
-          const blob = await googleDriveService.downloadFile(existing.id, token);
-          onOpenFile(existing, blob);
-        }
+        onOpenFile(fileToOpen, cachedBlob);
         return;
       }
+
+      const blob = await googleDriveService.downloadFile(metadata.id, token);
       const newFile: ScoreFile = {
+        ...(existing || {}),
         id: metadata.id,
         name: metadata.name.replace(/\.pdf$/i, ''),
         source: 'google-drive',
         lastOpened: Date.now(),
-        lastPage: 1,
-        offline: false,
-        size: metadata.size,
+        lastPage: existing?.lastPage ?? 1,
+        offline: true,
+        size: blob.size || metadata.size,
         thumbnail: metadata.thumbnailLink
       };
-      await storageService.saveFileMetadata(newFile);
+      await storageService.cacheFileOffline(newFile, blob);
       await loadFiles();
-      const blob = await googleDriveService.downloadFile(newFile.id, token);
       setLoading(false);
       onOpenFile(newFile, blob);
     } catch (e: any) {
@@ -243,21 +250,43 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       setErrorMsg(`"${file.name}" needs to be re-uploaded. Drop the PDF again to reopen it.`);
       return;
     }
-    if (file.source !== 'google-drive' || file.offline) {
-      // Local files (offline) and offline-cached Drive files: open from IndexedDB
-      onOpenFile(file, undefined, page);
-      return;
+
+    // 1. First check if the PDF blob is already cached in IndexedDB
+    try {
+      const cachedBlob = await storageService.getFileData(file.id);
+      if (cachedBlob) {
+        if (!file.offline) {
+          await storageService.saveFileMetadata({ ...file, offline: true });
+          await loadFiles();
+        }
+        onOpenFile(file, cachedBlob, page);
+        return;
+      }
+    } catch {
+      // Ignore cache check errors, fall through to download
     }
+
     if (!isOnline) {
       setErrorMsg('You must be online to open this score.');
       return;
     }
+
     setLoading(true);
     setErrorMsg(null);
     try {
-      const token = driveToken || await googleDriveService.getAccessToken();
-      if (!driveToken) setDriveToken(token);
-      const blob = await googleDriveService.downloadFile(file.id, token);
+      let token = driveToken;
+      if (!token) {
+        try {
+          token = await googleDriveService.getAccessToken({ allowInteractive: false });
+          if (token) setDriveToken(token);
+        } catch {
+          // No cached token available; downloadFile will use cached/public download strategies
+        }
+      }
+
+      const blob = await googleDriveService.downloadFile(file.id, token || undefined);
+      await storageService.cacheFileOffline(file, blob);
+      await loadFiles();
       onOpenFile(file, blob, page);
     } catch (err: any) {
       setErrorMsg('Failed to open from Google Drive: ' + err.message);
