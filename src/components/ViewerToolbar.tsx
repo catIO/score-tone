@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { ScoreFile } from '../services/storageService';
+import { isMusicXmlFile } from '../services/storageService';
+import { PlaybackWidget } from './PlaybackWidget';
+import type { PlaybackState } from '../services/audioPlaybackService';
 
 interface ViewerToolbarProps {
   file: ScoreFile;
@@ -18,6 +21,14 @@ interface ViewerToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomReset: () => void;
+  playbackState?: PlaybackState;
+  onTogglePlay?: () => void;
+  onRewind?: () => void;
+  onBpmChange?: (bpm: number) => void;
+  onVolumeChange?: (vol: number) => void;
+  countInEnabled?: boolean;
+  onToggleCountIn?: (enabled: boolean) => void;
+  onToggleLoop?: () => void;
 }
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
@@ -26,7 +37,10 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   onToggleDisplay, onToggleSettings, onToggleBookmarks,
   isDisplayOpen, isSettingsOpen, isBookmarksOpen,
   onSaveOffline,
-  zoom, onZoomIn, onZoomOut, onZoomReset
+  zoom, onZoomIn, onZoomOut, onZoomReset,
+  playbackState, onTogglePlay, onRewind, onBpmChange, onVolumeChange,
+  countInEnabled = true, onToggleCountIn,
+  onToggleLoop,
 }) => {
   const [jumpPage, setJumpPage] = useState(String(currentPage));
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -129,52 +143,67 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
         </div>
       </div>
 
-      {/* Center: page nav */}
-      <div className="flex items-center gap-1 flex-shrink-0">
-        <button
-          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
-          className="md-icon-btn"
-          style={{ width: 36, height: 36 }}
-        >
-          <span className="material-symbols-outlined text-[22px] leading-none">chevron_left</span>
-        </button>
-
-        <form onSubmit={handleJumpSubmit} className="flex items-center gap-1">
-          <input
-            ref={inputRef}
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            value={jumpPage}
-            onFocus={e => e.target.select()}
-            onChange={e => setJumpPage(e.target.value.replace(/\D/g, ''))}
-            onBlur={commitPageChange}
-            onKeyDown={e => {
-              if (e.key === 'Escape') {
-                setJumpPage(String(currentPage));
-                inputRef.current?.blur();
-              }
-            }}
-            className="w-10 h-8 text-center text-xs font-semibold rounded focus:outline-none focus:ring-1 focus:ring-[var(--md-primary)] select-text"
-            style={{
-              background: 'var(--md-surface-3)',
-              color: 'var(--md-on-surface)',
-              border: '1px solid var(--md-outline-variant)',
-              userSelect: 'text',
-            }}
+      {/* Center: Playback Widget for MusicXML OR Page Navigation for PDF */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {isMusicXmlFile(file) && playbackState && onTogglePlay && onRewind && onBpmChange && onVolumeChange ? (
+          <PlaybackWidget
+            playbackState={playbackState}
+            onTogglePlay={onTogglePlay}
+            onRewind={onRewind}
+            onBpmChange={onBpmChange}
+            onVolumeChange={onVolumeChange}
+            countInEnabled={countInEnabled}
+            onToggleCountIn={onToggleCountIn || (() => {})}
+            onToggleLoop={onToggleLoop}
           />
-          <span className="text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>/ {totalPages}</span>
-        </form>
+        ) : (
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="md-icon-btn"
+              style={{ width: 36, height: 36 }}
+            >
+              <span className="material-symbols-outlined text-[22px] leading-none">chevron_left</span>
+            </button>
 
-        <button
-          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
-          className="md-icon-btn"
-          style={{ width: 36, height: 36 }}
-        >
-          <span className="material-symbols-outlined text-[22px] leading-none">chevron_right</span>
-        </button>
+            <form onSubmit={handleJumpSubmit} className="flex items-center gap-1">
+              <input
+                ref={inputRef}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={jumpPage}
+                onFocus={e => e.target.select()}
+                onChange={e => setJumpPage(e.target.value.replace(/\D/g, ''))}
+                onBlur={commitPageChange}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') {
+                    setJumpPage(String(currentPage));
+                    inputRef.current?.blur();
+                  }
+                }}
+                className="w-10 h-8 text-center text-xs font-semibold rounded focus:outline-none focus:ring-1 focus:ring-[var(--md-primary)] select-text"
+                style={{
+                  background: 'var(--md-surface-3)',
+                  color: 'var(--md-on-surface)',
+                  border: '1px solid var(--md-outline-variant)',
+                  userSelect: 'text',
+                }}
+              />
+              <span className="text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>/ {totalPages}</span>
+            </form>
+
+            <button
+              onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="md-icon-btn"
+              style={{ width: 36, height: 36 }}
+            >
+              <span className="material-symbols-outlined text-[22px] leading-none">chevron_right</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Right: actions */}

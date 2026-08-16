@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { googleDriveService, GoogleDriveFileMetadata } from '../services/googleDriveService';
-import { FileText, X, CheckCircle2, Search } from 'lucide-react';
+import { FileText, X, CheckCircle2, Search, Music } from 'lucide-react';
 
 interface DriveFileBrowserProps {
   token: string; // already-acquired access token — avoids redundant getAccessToken() calls
@@ -180,10 +180,21 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
                 >
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ background: selected === file.id ? 'rgba(255,183,77,0.15)' : 'var(--md-surface-5)' }}>
-                    <FileText className="w-4 h-4" style={{ color: selected === file.id ? 'var(--md-primary)' : 'var(--md-on-surface-variant)' }} />
+                    {/\.(xml|musicxml|mxl)$/i.test(file.name) ? (
+                      <Music className="w-4 h-4 text-orange-400" />
+                    ) : (
+                      <FileText className="w-4 h-4" style={{ color: selected === file.id ? 'var(--md-primary)' : 'var(--md-on-surface-variant)' }} />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-medium truncate">{file.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{file.name}</p>
+                      {/\.(xml|musicxml|mxl)$/i.test(file.name) && (
+                        <span className="text-[9px] font-semibold px-1 py-0.2 rounded bg-orange-500/20 text-orange-300">
+                          MusicXML
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs mt-0.5 opacity-60">
                       {[fmt.date(file.modifiedTime), fmt.size(file.size)].filter(Boolean).join(' · ')}
                     </p>

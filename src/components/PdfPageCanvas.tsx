@@ -58,7 +58,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
     <div className="relative inline-flex items-center justify-center bg-transparent shadow-md rounded">
       {rendering && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-xs z-10">
-          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+          <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
         </div>
       )}
       {error && (

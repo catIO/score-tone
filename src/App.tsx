@@ -74,8 +74,9 @@ export const App: React.FC = () => {
               ? { ...existing, lastOpened: Date.now(), offline: true, size: blob.size }
               : {
                 id: targetId,
-                name: name.replace(/\.pdf$/i, ''),
+                name: name.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
                 source: 'google-drive',
+                fileType: /\.(xml|musicxml|mxl)$/i.test(name) ? 'musicxml' : 'pdf',
                 lastOpened: Date.now(),
                 lastPage: linkedPage ?? 1,
                 offline: true,
@@ -174,8 +175,9 @@ export const App: React.FC = () => {
       const newFile: ScoreFile = {
         ...existing,
         id: driveId,
-        name: shareName.replace(/\.pdf$/i, ''),
+        name: shareName.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
         source: 'google-drive',
+        fileType: /\.(xml|musicxml|mxl)$/i.test(shareName) ? 'musicxml' : 'pdf',
         lastOpened: Date.now(),
         lastPage: existing?.lastPage ?? 1,
         offline: true,
@@ -250,7 +252,7 @@ export const App: React.FC = () => {
   if (importing || silentAuthPending) {
     return (
       <div className="w-screen h-screen flex flex-col items-center justify-center bg-[#0a0a0c] text-white gap-4">
-        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
+        <Loader2 className="w-12 h-12 text-amber-400 animate-spin" />
         <p className="font-semibold text-sm text-slate-300">
           {silentAuthPending ? 'Opening score…' : 'Importing shared score from Google Drive…'}
         </p>

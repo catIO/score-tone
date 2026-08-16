@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi, X } from 'lucide-react';
-import { storageService, type ScoreFile } from '../services/storageService';
+import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi, X, Music } from 'lucide-react';
+import { storageService, isMusicXmlFile, type ScoreFile } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
@@ -80,8 +80,12 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   };
 
   const processLocalFile = async (file: File) => {
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setErrorMsg('Only PDF files are supported.');
+    const nameLower = file.name.toLowerCase();
+    const isPdf = file.type === 'application/pdf' || nameLower.endsWith('.pdf');
+    const isXml = file.type.includes('xml') || nameLower.endsWith('.xml') || nameLower.endsWith('.musicxml') || nameLower.endsWith('.mxl');
+
+    if (!isPdf && !isXml) {
+      setErrorMsg('Only PDF and MusicXML files (.xml, .musicxml) are supported.');
       return;
     }
     setLoading(true);
@@ -90,8 +94,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       const fileId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newFile: ScoreFile = {
         id: fileId,
-        name: file.name.replace(/\.pdf$/i, ''),
+        name: file.name.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
         source: 'local',
+        fileType: isXml ? 'musicxml' : 'pdf',
         lastOpened: Date.now(),
         lastPage: 1,
         offline: true,
@@ -102,7 +107,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       setLoading(false);
       onOpenFile(newFile, file);
     } catch (e: any) {
-      setErrorMsg('Failed to load PDF.');
+      setErrorMsg(isXml ? 'Failed to load MusicXML file.' : 'Failed to load PDF.');
       setLoading(false);
     }
   };
@@ -386,14 +391,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--md-primary)')}
               onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--md-outline-variant)')}
             >
-              <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="application/pdf" className="hidden" />
+              <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml" className="hidden" />
               <div className="w-12 h-12 rounded-full flex items-center justify-center"
                 style={{ background: 'var(--md-primary-container)' }}>
                 <FileUp className="w-5 h-5" style={{ color: 'var(--md-on-primary-container)' }} />
               </div>
               <div className="text-center">
-                <p className="text-sm font-semibold" style={{ color: 'var(--md-on-surface)' }}>Drop a PDF here</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>or click to browse</p>
+                <p className="text-sm font-semibold" style={{ color: 'var(--md-on-surface)' }}>Drop a PDF or MusicXML score</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>or click to browse (.pdf, .xml, .musicxml)</p>
               </div>
             </div>
 
@@ -502,6 +507,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                           <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
                           <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
                         </svg>
+                      ) : isMusicXmlFile(file) ? (
+                        <Music className="w-5 h-5 text-orange-400" />
                       ) : (
                         <HardDrive className="w-5 h-5" style={{ color: 'var(--md-on-surface-variant)' }} />
                       )}
@@ -509,11 +516,18 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>
-                        {file.name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>
+                          {file.name}
+                        </p>
+                        {isMusicXmlFile(file) && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 flex-shrink-0">
+                            MusicXML
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
-                        {[formatSize(file.size), `p.${file.lastPage}`, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
+                        {[formatSize(file.size), !isMusicXmlFile(file) ? `p.${file.lastPage}` : undefined, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
                       </p>
                       {file.bookmarks && file.bookmarks.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mt-2">

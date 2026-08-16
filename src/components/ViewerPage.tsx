@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import type { ScoreFile } from '../services/storageService';
-import { storageService } from '../services/storageService';
+import { storageService, isMusicXmlFile } from '../services/storageService';
 import type { AppSettings, FilterSettings } from '../services/settingsService';
 import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
+import { readMusicXmlText } from '../services/musicXmlService';
+import { audioPlaybackService, type PlaybackState } from '../services/audioPlaybackService';
 import ViewerToolbar from './ViewerToolbar';
 import PdfViewer from './PdfViewer';
+import MusicXmlViewer from './MusicXmlViewer';
 import DisplayControls from './DisplayControls';
 import SettingsPanel from './SettingsPanel';
 import BookmarksPanel from './BookmarksPanel';
@@ -34,11 +37,17 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   onPagePermalink,
   onFileMetadataUpdated,
 }) => {
+  const isMusicXml = isMusicXmlFile(file);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
+  const [xmlContent, setXmlContent] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(file.lastPage || 1);
-  const [totalPages, setTotalPages] = useState<number>(0);
+  const [totalPages, setTotalPages] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Playback state for MusicXML
+  const [playbackState, setPlaybackState] = useState<PlaybackState>(audioPlaybackService.getState());
+  const [countInEnabled, setCountInEnabled] = useState<boolean>(audioPlaybackService.getCountIn());
 
   // Panel display toggles — toolbar shown only when hovering the top zone
   const [toolbarVisible, setToolbarVisible] = useState<boolean>(false);
@@ -73,52 +82,79 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
   }, [file.name]);
 
-  // Load PDF file on mount
+  // Subscribe to audio playback state changes
+  useEffect(() => {
+    if (!isMusicXml) return;
+    const unsubscribe = audioPlaybackService.subscribeState((newState) => {
+      setPlaybackState(newState);
+    });
+    return () => {
+      unsubscribe();
+      audioPlaybackService.stop();
+    };
+  }, [isMusicXml]);
+
+  // Load Score file (PDF or MusicXML) on mount
   useEffect(() => {
     let active = true;
 
-    const loadPdf = async () => {
+    const loadScore = async () => {
       setLoading(true);
       setErrorMsg(null);
 
       try {
-        let pdfData: Blob | string | null = null;
+        let rawData: Blob | string | null = null;
 
         // 1. Check inMemoryBlob (e.g. freshly opened local or freshly downloaded Drive file)
         if (inMemoryBlob) {
-          pdfData = inMemoryBlob;
+          rawData = inMemoryBlob;
         } else {
           // 2. Fetch from IndexedDB if offline cached
-          pdfData = await storageService.getFileData(file.id);
+          rawData = await storageService.getFileData(file.id);
         }
 
-        if (!pdfData) {
+        if (!rawData) {
           // 3. Fallback: If it's a Google Drive file, try to download it on-the-fly
           if (file.source === 'google-drive') {
-            pdfData = await googleDriveService.downloadFile(file.id);
-            if (pdfData) {
-              await storageService.cacheFileOffline(file, pdfData).catch(() => {});
+            rawData = await googleDriveService.downloadFile(file.id);
+            if (rawData) {
+              await storageService.cacheFileOffline(file, rawData).catch(() => {});
             }
           } else if (file.source === 'local') {
             throw new Error('Local temporary file has expired. Please reload it from the library.');
           }
         }
 
-        if (!pdfData) {
+        if (!rawData) {
           throw new Error('Could not retrieve file content.');
         }
 
-        const doc = await pdfService.loadDocument(pdfData);
-        if (active) {
-          setPdfDoc(doc);
-          setLoading(false);
-          // Set to last page
-          setCurrentPage(file.lastPage || 1);
+        if (isMusicXml) {
+          // Load MusicXML
+          const textXml = await readMusicXmlText(rawData);
+          if (active) {
+            setXmlContent(textXml);
+            const { bpm } = await audioPlaybackService.loadMusicXml(textXml);
+            if (file.tempo) {
+              audioPlaybackService.setTempo(file.tempo);
+            } else if (bpm) {
+              audioPlaybackService.setTempo(bpm);
+            }
+            setLoading(false);
+          }
+        } else {
+          // Load PDF document
+          const doc = await pdfService.loadDocument(rawData);
+          if (active) {
+            setPdfDoc(doc);
+            setLoading(false);
+            setCurrentPage(file.lastPage || 1);
+          }
         }
       } catch (err: any) {
-        console.error(err);
+        console.error('Failed to open score:', err);
         if (active) {
-          setErrorMsg(err.message || 'Failed to open PDF score.');
+          setErrorMsg(err.message || 'Failed to open score file.');
           setLoading(false);
         }
       }
@@ -131,7 +167,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         const token = googleDriveService.getCachedToken();
         if (!token) return;
         const meta = await googleDriveService.getFileMetadata(file.id, token);
-        const updatedName = meta.name.replace(/\.pdf$/i, '');
+        const updatedName = meta.name.replace(/\.(pdf|xml|musicxml|mxl)$/i, '');
         if (
           file.name !== updatedName ||
           file.size !== meta.size ||
@@ -156,14 +192,14 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       }
     };
 
-    loadPdf();
+    loadScore();
     syncMetadata();
 
     return () => {
       active = false;
       if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     };
-  }, [file.id, inMemoryBlob]);
+  }, [file.id, inMemoryBlob, isMusicXml]);
 
   // Save progress (last opened page) back to database and update URL permalink
   const handlePageChange = async (newPage: number) => {
@@ -211,6 +247,47 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
   }, [isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
 
+  // Playback Control Handlers
+  const handleTogglePlay = useCallback(() => {
+    if (audioPlaybackService.isPlaying()) {
+      audioPlaybackService.pause();
+    } else {
+      audioPlaybackService.play(playbackState.bpm).catch(err => {
+        console.error('Audio playback failed:', err);
+      });
+    }
+  }, [playbackState.bpm]);
+
+  const handleRewind = useCallback(() => {
+    audioPlaybackService.stop();
+  }, []);
+
+  const handleBpmChange = useCallback((newBpm: number) => {
+    audioPlaybackService.setTempo(newBpm);
+    storageService.saveFileMetadata({ ...file, tempo: newBpm }).catch(() => {});
+  }, [file]);
+
+  const handleVolumeChange = useCallback((newVol: number) => {
+    audioPlaybackService.setVolume(newVol);
+  }, []);
+
+  const handleToggleCountIn = useCallback((enabled: boolean) => {
+    setCountInEnabled(enabled);
+    audioPlaybackService.setCountIn(enabled);
+  }, []);
+
+  const handleToggleLoop = useCallback(() => {
+    if (playbackState.loopEnabled || playbackState.loopRange !== null) {
+      audioPlaybackService.clearLoop();
+    } else {
+      audioPlaybackService.toggleLoop();
+    }
+  }, [playbackState.loopEnabled, playbackState.loopRange]);
+
+  const handleClearLoop = useCallback(() => {
+    audioPlaybackService.clearLoop();
+  }, []);
+
   // Keyboard Navigation & Bluetooth turn pedals
   useEffect(() => {
     const PEDAL_DEBOUNCE_MS = 250;
@@ -218,6 +295,30 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       // Ignore key events if focused on input elements (like page jump input)
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
         return;
+      }
+
+      // MusicXML playback shortcuts
+      if (isMusicXml) {
+        if (e.key === ' ' || e.code === 'Space') {
+          e.preventDefault();
+          handleTogglePlay();
+          return;
+        }
+        if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          handleRewind();
+          return;
+        }
+        if (e.key === 'l' || e.key === 'L') {
+          e.preventDefault();
+          handleToggleLoop();
+          return;
+        }
+        if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') {
+          e.preventDefault();
+          handleClearLoop();
+          return;
+        }
       }
 
       const isLandscape = containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : false;
@@ -240,7 +341,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       }
 
       switch (e.key) {
-        case 'ArrowRight': case 'ArrowDown': case 'PageDown': case ' ': case 'Enter':
+        case 'ArrowRight': case 'ArrowDown': case 'PageDown': case 'Enter':
           e.preventDefault();
           handlePageChange(Math.min(totalPages, currentPage + step));
           break;
@@ -265,7 +366,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset, zoom]);
+  }, [isMusicXml, handleTogglePlay, handleRewind, currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset, zoom]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -439,7 +540,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
   }, [filters.warmth, filters.sepia]);
 
-  if (loading && !pdfDoc) {
+  if (loading && !pdfDoc && !xmlContent) {
     return (
       <div className="page-container flex flex-col items-center justify-center h-screen gap-4"
         style={{ background: 'var(--md-surface)', color: 'var(--md-on-surface-variant)' }}>
@@ -455,7 +556,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         style={{ background: 'var(--md-surface)', color: 'var(--md-on-surface)' }}>
         <AlertTriangle className="w-12 h-12" style={{ color: 'var(--md-error)' }} />
         <div className="max-w-md">
-          <h2 className="text-lg font-bold mb-2">Failed to open PDF</h2>
+          <h2 className="text-lg font-bold mb-2">Failed to open score</h2>
           <p className="text-sm" style={{ color: 'var(--md-on-surface-variant)' }}>{errorMsg}</p>
         </div>
         <button onClick={onBack} className="md-btn-tonal flex items-center gap-2">
@@ -507,26 +608,44 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             onZoomIn={zoomIn}
             onZoomOut={zoomOut}
             onZoomReset={zoomReset}
+            playbackState={isMusicXml ? playbackState : undefined}
+            onTogglePlay={isMusicXml ? handleTogglePlay : undefined}
+            onRewind={isMusicXml ? handleRewind : undefined}
+            onBpmChange={isMusicXml ? handleBpmChange : undefined}
+            onVolumeChange={isMusicXml ? handleVolumeChange : undefined}
+            countInEnabled={countInEnabled}
+            onToggleCountIn={handleToggleCountIn}
+            onToggleLoop={isMusicXml ? handleToggleLoop : undefined}
           />
         </div>
       </div>
 
-      {/* PDF viewport */}
+      {/* Score Viewport: MusicXML or PDF */}
       <div className="w-full h-full relative"
         style={{ '--pdf-bg': filters.backgroundColor, '--pdf-mix-blend': 'multiply' } as React.CSSProperties}>
         <div style={tintStyle} />
         <div className="w-full h-full" style={{ filter: cssFilterString, transition: 'filter 150ms' }}>
-          {pdfDoc && (
-            <PdfViewer
-              pdfDoc={pdfDoc}
-              currentPage={currentPage}
-              onPageChange={handlePageChange}
-              fitMode={appSettings.fitMode}
-              scrollMode={appSettings.scrollMode}
-              twoPageLandscape={appSettings.twoPageLandscape}
-              onTotalPages={setTotalPages}
+          {isMusicXml && xmlContent ? (
+            <MusicXmlViewer
+              xmlContent={xmlContent}
               zoom={zoom}
+              onRenderComplete={({ totalPages: pages }) => {
+                setTotalPages(Math.max(1, pages));
+              }}
             />
+          ) : (
+            pdfDoc && (
+              <PdfViewer
+                pdfDoc={pdfDoc}
+                currentPage={currentPage}
+                onPageChange={handlePageChange}
+                fitMode={appSettings.fitMode}
+                scrollMode={appSettings.scrollMode}
+                twoPageLandscape={appSettings.twoPageLandscape}
+                onTotalPages={setTotalPages}
+                zoom={zoom}
+              />
+            )
           )}
         </div>
       </div>

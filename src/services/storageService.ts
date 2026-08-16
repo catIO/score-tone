@@ -7,17 +7,29 @@ export interface Bookmark {
   createdAt: number;
 }
 
+export type FileFormat = 'pdf' | 'musicxml';
+
 export interface ScoreFile {
   id: string; // Google Drive File ID or a generated UUID for local files
   name: string;
   source: 'local' | 'google-drive';
+  fileType?: FileFormat; // defaults to 'pdf' if not specified
   lastOpened: number; // timestamp
   lastPage: number;
-  offline: boolean; // whether the PDF Blob is saved in fileData
+  offline: boolean; // whether the file Blob is saved in fileData
   size?: number; // size in bytes
   modifiedTime?: string; // from Google Drive
   thumbnail?: string; // base64 or link from Drive
   bookmarks?: Bookmark[];
+  tempo?: number; // saved playback BPM
+}
+
+export function isMusicXmlFile(file?: Partial<ScoreFile> | { name?: string; fileType?: string } | null): boolean {
+  if (!file) return false;
+  if (file.fileType === 'musicxml') return true;
+  if (file.fileType === 'pdf') return false;
+  const name = (file.name || '').toLowerCase();
+  return name.endsWith('.xml') || name.endsWith('.musicxml') || name.endsWith('.mxl');
 }
 
 export interface ScoreFileData {

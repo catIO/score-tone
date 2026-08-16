@@ -359,7 +359,7 @@ export const googleDriveService = {
     const escapedSearch = searchTerm ? searchTerm.replace(/'/g, "\\'") : '';
 
     const buildUrl = (includeFolder: boolean) => {
-      let q = `mimeType='application/pdf' and trashed=false`;
+      let q = `(mimeType='application/pdf' or mimeType='application/xml' or mimeType='text/xml' or name contains '.xml' or name contains '.musicxml' or name contains '.mxl') and trashed=false`;
       if (includeFolder && DRIVE_FOLDER_ID) q += ` and '${DRIVE_FOLDER_ID}' in parents`;
       if (escapedSearch) q += ` and name contains '${escapedSearch}'`;
       return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''
@@ -537,7 +537,7 @@ export const googleDriveService = {
 
     return new Promise((resolve) => {
       const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
-        .setMimeTypes('application/pdf')
+        .setMimeTypes('application/pdf,application/xml,text/xml')
         .setMode(window.google.picker.DocsViewMode.LIST)
         .setLabel('My Music');
 
@@ -545,18 +545,18 @@ export const googleDriveService = {
         view.setParent(DRIVE_FOLDER_ID);
       }
 
-      // Primary view: PDFs filtered to the configured folder (or all Drive)
+      // Primary view: PDFs & MusicXML filtered to the configured folder (or all Drive)
       const picker = new window.google.picker.PickerBuilder()
         .addView(view)
         .addView(new window.google.picker.DocsView()
-          .setMimeTypes('application/pdf')
+          .setMimeTypes('application/pdf,application/xml,text/xml')
           .setIncludeFolders(true)
           .setSelectFolderEnabled(false)
           .setLabel('Google Drive'))
         .setOAuthToken(token)
         .setDeveloperKey(API_KEY)
         .setAppId(APP_ID)
-        .setTitle('Select a PDF score')
+        .setTitle('Select a PDF or MusicXML score')
         .setCallback((data: any) => {
           if (data.action === window.google.picker.Action.PICKED) {
             const doc = data.docs[0];
