@@ -133,6 +133,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
       <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
         Options
       </p>
+      <Row label="Auto-Hide Menu" description="Hide toolbar until top edge is hovered or tapped">
+        <Toggle checked={settings.autoHideControls} onChange={v => set('autoHideControls', v)} />
+      </Row>
       <Row label="Two-Page Landscape" description="Side-by-side pages in landscape">
         <Toggle checked={settings.twoPageLandscape} onChange={v => set('twoPageLandscape', v)} />
       </Row>

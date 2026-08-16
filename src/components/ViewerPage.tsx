@@ -234,10 +234,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   }, []);
 
   const handleHotZoneLeave = useCallback(() => {
+    if (!appSettings.autoHideControls) return;
     // Keep toolbar open if a side panel is open
     if (isDisplayOpen || isSettingsOpen || isBookmarksOpen) return;
     hideTimerRef.current = window.setTimeout(() => setToolbarVisible(false), 600);
-  }, [isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
+  }, [appSettings.autoHideControls, isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
 
   // Keep toolbar visible while a panel is open
   useEffect(() => {
@@ -578,17 +579,20 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       {/* Invisible hover hot-zone at top — triggers toolbar */}
       <div
         className="absolute top-0 left-0 right-0 z-50"
-        style={{ height: '20vh' }}
+        style={{
+          height: appSettings.autoHideControls ? '20vh' : 'auto',
+          pointerEvents: appSettings.autoHideControls ? 'auto' : 'none',
+        }}
         onMouseEnter={handleHotZoneEnter}
         onMouseLeave={handleHotZoneLeave}
       >
         {/* Toolbar slides in/out within hot-zone */}
         <div
           style={{
-            transform: toolbarVisible ? 'translateY(0)' : 'translateY(-100%)',
-            opacity: toolbarVisible ? 1 : 0,
+            transform: (!appSettings.autoHideControls || toolbarVisible) ? 'translateY(0)' : 'translateY(-100%)',
+            opacity: (!appSettings.autoHideControls || toolbarVisible) ? 1 : 0,
             transition: 'transform 200ms ease, opacity 200ms ease',
-            pointerEvents: toolbarVisible ? 'auto' : 'none',
+            pointerEvents: (!appSettings.autoHideControls || toolbarVisible) ? 'auto' : 'none',
           }}
         >
           <ViewerToolbar

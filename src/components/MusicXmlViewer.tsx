@@ -77,7 +77,8 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         drawComposer: true,
         drawMeasureNumbers: true,
         drawCredits: true,
-        newSystemFromXML: true,
+        newSystemFromXML: false,
+        newPageFromXML: false,
       });
 
       osmdRef.current = osmd;
@@ -229,14 +230,14 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     const startM = playbackState.loopRange?.startMeasure ?? null;
     const endM = playbackState.loopRange?.endMeasure ?? null;
 
-    // Render IN Cue
+    // Render IN Cue (Triangle pointing forward / right)
     if (startM !== null && startM >= 0) {
       const gMeasure = getGraphicMeasure(startM);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
         const inGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         inGroup.setAttribute('class', 'scoretone-cue-badge');
-        inGroup.setAttribute('style', 'cursor: pointer;');
+        inGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
         inGroup.onclick = (e) => {
           e.stopPropagation();
           audioPlaybackService.clearLoop();
@@ -245,40 +246,27 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const x = gMeasure.x;
         const topY = gMeasure.topY;
 
-        // Badge pill
-        const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        bgRect.setAttribute('x', `${x}`);
-        bgRect.setAttribute('y', `${topY - 18}`);
-        bgRect.setAttribute('width', '24');
-        bgRect.setAttribute('height', '15');
-        bgRect.setAttribute('rx', '3');
-        bgRect.setAttribute('fill', '#ea580c');
-        bgRect.setAttribute('stroke', '#ffedd5');
-        bgRect.setAttribute('stroke-width', '1');
+        // Forward / Right-pointing triangle arrow (enlarged, no text)
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${x},${topY - 18} ${x + 16},${topY - 9} ${x},${topY}`);
+        arrow.setAttribute('fill', '#ea580c');
+        arrow.setAttribute('stroke', '#ffffff');
+        arrow.setAttribute('stroke-width', '1.5');
+        arrow.setAttribute('stroke-linejoin', 'round');
 
-        const cueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        cueText.setAttribute('x', `${x + 12}`);
-        cueText.setAttribute('y', `${topY - 6}`);
-        cueText.setAttribute('fill', '#ffffff');
-        cueText.setAttribute('font-size', '9');
-        cueText.setAttribute('font-weight', 'bold');
-        cueText.setAttribute('text-anchor', 'middle');
-        cueText.textContent = 'IN';
-
-        inGroup.appendChild(bgRect);
-        inGroup.appendChild(cueText);
+        inGroup.appendChild(arrow);
         svg.appendChild(inGroup);
       }
     }
 
-    // Render OUT Cue
+    // Render OUT Cue (Triangle pointing backward / left)
     if (endM !== null && endM >= 0 && endM !== startM) {
       const gMeasure = getGraphicMeasure(endM);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
         const outGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         outGroup.setAttribute('class', 'scoretone-cue-badge');
-        outGroup.setAttribute('style', 'cursor: pointer;');
+        outGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
         outGroup.onclick = (e) => {
           e.stopPropagation();
           audioPlaybackService.clearLoop();
@@ -287,28 +275,15 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const xEnd = gMeasure.x + gMeasure.width;
         const topY = gMeasure.topY;
 
-        // Badge pill
-        const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        bgRect.setAttribute('x', `${xEnd - 30}`);
-        bgRect.setAttribute('y', `${topY - 18}`);
-        bgRect.setAttribute('width', '30');
-        bgRect.setAttribute('height', '15');
-        bgRect.setAttribute('rx', '3');
-        bgRect.setAttribute('fill', '#ea580c');
-        bgRect.setAttribute('stroke', '#ffedd5');
-        bgRect.setAttribute('stroke-width', '1');
+        // Backward / Left-pointing triangle arrow (enlarged, no text)
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${xEnd},${topY - 18} ${xEnd - 16},${topY - 9} ${xEnd},${topY}`);
+        arrow.setAttribute('fill', '#ea580c');
+        arrow.setAttribute('stroke', '#ffffff');
+        arrow.setAttribute('stroke-width', '1.5');
+        arrow.setAttribute('stroke-linejoin', 'round');
 
-        const cueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        cueText.setAttribute('x', `${xEnd - 15}`);
-        cueText.setAttribute('y', `${topY - 6}`);
-        cueText.setAttribute('fill', '#ffffff');
-        cueText.setAttribute('font-size', '9');
-        cueText.setAttribute('font-weight', 'bold');
-        cueText.setAttribute('text-anchor', 'middle');
-        cueText.textContent = 'OUT';
-
-        outGroup.appendChild(bgRect);
-        outGroup.appendChild(cueText);
+        outGroup.appendChild(arrow);
         svg.appendChild(outGroup);
       }
     }
