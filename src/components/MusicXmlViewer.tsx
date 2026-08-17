@@ -21,6 +21,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   zoom,
   onRenderComplete,
 }) => {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<any>(null);
   const onRenderCompleteRef = useRef(onRenderComplete);
@@ -30,6 +31,30 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   const [renderError, setRenderError] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<PlaybackState>(audioPlaybackService.getState());
 
+  // Automatically scroll the container to keep the active cursor comfortably in view
+  const autoScrollToCursor = useCallback((smooth: boolean = true) => {
+    const osmd = osmdRef.current;
+    const scrollContainer = scrollContainerRef.current;
+    if (!osmd?.cursor?.cursorElement || !scrollContainer) return;
+
+    const cursorEl = osmd.cursor.cursorElement;
+    const cursorRect = cursorEl.getBoundingClientRect();
+    const containerRect = scrollContainer.getBoundingClientRect();
+
+    // Trigger scroll if cursor moves into top 15% or bottom 35% of the viewport
+    const idealTop = containerRect.top + containerRect.height * 0.28;
+    const topThreshold = containerRect.top + 70;
+    const bottomThreshold = containerRect.bottom - 160;
+
+    if (cursorRect.top < topThreshold || cursorRect.bottom > bottomThreshold) {
+      const scrollDiff = cursorRect.top - idealTop;
+      scrollContainer.scrollBy({
+        top: scrollDiff,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
+  }, []);
+
   // Listen to playback state & synchronize cues from single source of truth
   useEffect(() => {
     return audioPlaybackService.subscribeState((state) => {
@@ -37,7 +62,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     });
   }, []);
 
-  // Jump OSMD visual cursor to specific measure
+  // Jump OSMD visual cursor to specific measure and scroll into view
   const jumpCursorToMeasure = useCallback((targetMeasureIndex: number) => {
     const osmd = osmdRef.current;
     if (!osmd?.cursor) return;
@@ -48,10 +73,11 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         osmd.cursor.next();
       }
       osmd.cursor.show();
+      setTimeout(() => autoScrollToCursor(true), 60);
     } catch (err) {
       console.warn('Error jumping OSMD cursor:', err);
     }
-  }, []);
+  }, [autoScrollToCursor]);
 
   // Initialize and render OSMD score
   const renderScore = useCallback(async () => {
@@ -143,6 +169,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         lastStepTime = currentBeat;
         try {
           osmdRef.current.cursor.next();
+          autoScrollToCursor(true);
         } catch {
           // ignore cursor edge bounds
         }
@@ -157,6 +184,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         try {
           osmdRef.current.cursor.reset();
           osmdRef.current.cursor.show();
+          scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         } catch {
           // ignore
         }
@@ -378,6 +406,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
   return (
     <div
+      ref={scrollContainerRef}
       tabIndex={-1}
       className="w-full h-full flex flex-col select-none outline-none overflow-auto"
       style={{
