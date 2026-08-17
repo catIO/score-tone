@@ -359,7 +359,7 @@ export const googleDriveService = {
     const escapedSearch = searchTerm ? searchTerm.replace(/'/g, "\\'") : '';
 
     const buildUrl = (includeFolder: boolean) => {
-      let q = `(mimeType='application/pdf' or mimeType='application/xml' or mimeType='text/xml' or name contains '.xml' or name contains '.musicxml' or name contains '.mxl') and trashed=false`;
+      let q = `(mimeType='application/pdf' or mimeType='application/xml' or mimeType='text/xml' or mimeType='application/vnd.recordare.musicxml+xml' or mimeType='application/vnd.recordare.musicxml' or mimeType='text/plain' or name contains '.xml' or name contains '.musicxml' or name contains '.mxl' or name contains '.pdf') and trashed=false`;
       if (includeFolder && DRIVE_FOLDER_ID) q += ` and '${DRIVE_FOLDER_ID}' in parents`;
       if (escapedSearch) q += ` and name contains '${escapedSearch}'`;
       return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''

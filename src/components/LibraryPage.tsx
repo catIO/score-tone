@@ -81,11 +81,25 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
   const processLocalFile = async (file: File) => {
     const nameLower = file.name.toLowerCase();
-    const isPdf = file.type === 'application/pdf' || nameLower.endsWith('.pdf');
-    const isXml = file.type.includes('xml') || nameLower.endsWith('.xml') || nameLower.endsWith('.musicxml') || nameLower.endsWith('.mxl');
+    let isPdf = file.type === 'application/pdf' || nameLower.endsWith('.pdf');
+    let isXml = file.type.includes('xml') || nameLower.endsWith('.xml') || nameLower.endsWith('.musicxml') || nameLower.endsWith('.mxl');
+
+    // On iOS/iPadOS, files from Files app might have generic MIME types; sniff initial content
+    if (!isPdf && !isXml) {
+      try {
+        const slice = await file.slice(0, 200).text();
+        if (slice.includes('<?xml') || slice.includes('<score-partwise') || slice.includes('<score-timewise')) {
+          isXml = true;
+        } else if (slice.startsWith('%PDF-')) {
+          isPdf = true;
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     if (!isPdf && !isXml) {
-      setErrorMsg('Only PDF and MusicXML files (.xml, .musicxml) are supported.');
+      setErrorMsg('Only PDF and MusicXML files (.xml, .musicxml, .mxl) are supported.');
       return;
     }
     setLoading(true);
@@ -391,7 +405,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--md-primary)')}
               onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--md-outline-variant)')}
             >
-              <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml" className="hidden" />
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml,text/plain,application/octet-stream,text/*"
+                className="hidden"
+              />
               <div className="w-12 h-12 rounded-full flex items-center justify-center"
                 style={{ background: 'var(--md-primary-container)' }}>
                 <FileUp className="w-5 h-5" style={{ color: 'var(--md-on-primary-container)' }} />
