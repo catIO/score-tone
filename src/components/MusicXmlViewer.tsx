@@ -211,56 +211,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const svg = svgs[gMeasure.pageIndex];
         const measureDuration = Math.max(0.001, measureEndBeat - measureStartBeat);
         const progress = Math.max(0, Math.min(1, (currentBeat - measureStartBeat) / measureDuration));
-
-        // Notehead-accurate cursor X positioning
-        let cursorX = gMeasure.x + (gMeasure.width * progress);
-        const staffEntries = (osmdRef.current?.GraphicSheet?.MusicPages?.[gMeasure.pageIndex]?.MusicSystems || [])
-          .flatMap((s: any) => s.StaffLines || [])
-          .flatMap((sl: any) => sl.Measures || [])
-          .find((m: any) => (m.MeasureNumber || 0) === (currentMeasureIndex + 1))?.staffEntries || [];
-
-        if (staffEntries.length > 0) {
-          const notesInMeasure = notes.filter(n => n.measureIndex === currentMeasureIndex);
-          const entriesWithTime: Array<{ x: number; time: number }> = [];
-
-          for (let seIdx = 0; seIdx < staffEntries.length; seIdx++) {
-            const se = staffEntries[seIdx];
-            const entryX = se.PositionAndShape.AbsolutePosition.x * 10;
-            const noteObj = notesInMeasure[Math.min(seIdx, notesInMeasure.length - 1)];
-            if (noteObj) {
-              entriesWithTime.push({ x: entryX, time: noteObj.timeInBeats });
-            }
-          }
-
-          if (entriesWithTime.length > 0) {
-            if (currentBeat <= entriesWithTime[0].time) {
-              cursorX = entriesWithTime[0].x;
-            } else if (currentBeat >= entriesWithTime[entriesWithTime.length - 1].time) {
-              const last = entriesWithTime[entriesWithTime.length - 1];
-              const endX = gMeasure.x + gMeasure.width;
-              const frac = Math.min(1, Math.max(0, (currentBeat - last.time) / Math.max(0.5, measureEndBeat - last.time)));
-              cursorX = last.x + (endX - last.x) * frac;
-            } else {
-              for (let i = 0; i < entriesWithTime.length - 1; i++) {
-                const cur = entriesWithTime[i];
-                const next = entriesWithTime[i + 1];
-                if (currentBeat >= cur.time && currentBeat < next.time) {
-                  const frac = (currentBeat - cur.time) / Math.max(0.001, next.time - cur.time);
-                  cursorX = cur.x + (next.x - cur.x) * frac;
-                  break;
-                }
-              }
-            }
-          }
-        }
-
-        // Snap directly to startNoteX if at the IN point
-        if (playbackState.loopRange?.startNoteX !== undefined &&
-            Math.abs(currentBeat - playbackState.loopRange.startBeat) < 0.05 &&
-            gMeasure.pageIndex === (playbackState.loopRange.startNotePageIndex ?? gMeasure.pageIndex)) {
-          cursorX = playbackState.loopRange.startNoteX;
-        }
-
+        const cursorX = gMeasure.x + (gMeasure.width * progress);
         const topY = gMeasure.topY;
         const bottomY = gMeasure.bottomY;
 
@@ -430,31 +381,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     if (!loopRange) return;
 
     // Render IN Cue (Triangle pointing forward / right)
-    if (loopRange.startNoteX !== undefined && loopRange.startNotePageIndex !== undefined) {
-      const svg = svgs[loopRange.startNotePageIndex];
-      if (svg) {
-        const inGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        inGroup.setAttribute('class', 'scoretone-cue-badge');
-        inGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
-        inGroup.onclick = (e) => {
-          e.stopPropagation();
-          audioPlaybackService.clearLoop();
-        };
-
-        const x = loopRange.startNoteX;
-        const topY = loopRange.startNoteTopY ?? 40;
-
-        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        arrow.setAttribute('points', `${x},${topY - 18} ${x + 16},${topY - 9} ${x},${topY}`);
-        arrow.setAttribute('fill', '#ea580c');
-        arrow.setAttribute('stroke', '#ffffff');
-        arrow.setAttribute('stroke-width', '1.5');
-        arrow.setAttribute('stroke-linejoin', 'round');
-
-        inGroup.appendChild(arrow);
-        svg.appendChild(inGroup);
-      }
-    } else if (loopRange.startMeasure !== undefined && loopRange.startMeasure >= 0) {
+    if (loopRange.startMeasure !== undefined && loopRange.startMeasure >= 0) {
       const gMeasure = getGraphicMeasure(loopRange.startMeasure);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
@@ -466,7 +393,10 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
           audioPlaybackService.clearLoop();
         };
 
-        const x = gMeasure.x;
+        const measureRange = audioPlaybackService.getMeasureBeatRange(Math.max(0, loopRange.startMeasure - 1)) || { startBeat: 0, endBeat: 4 };
+        const mDur = Math.max(0.001, measureRange.endBeat - measureRange.startBeat);
+        const inProgress = Math.max(0, Math.min(1, (loopRange.startBeat - measureRange.startBeat) / mDur));
+        const x = gMeasure.x + (gMeasure.width * inProgress);
         const topY = gMeasure.topY;
 
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -482,31 +412,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
 
     // Render OUT Cue (Triangle pointing backward / left)
-    if (loopRange.endNoteX !== undefined && loopRange.endNotePageIndex !== undefined) {
-      const svg = svgs[loopRange.endNotePageIndex];
-      if (svg) {
-        const outGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        outGroup.setAttribute('class', 'scoretone-cue-badge');
-        outGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
-        outGroup.onclick = (e) => {
-          e.stopPropagation();
-          audioPlaybackService.clearLoop();
-        };
-
-        const xEnd = loopRange.endNoteX;
-        const topY = loopRange.endNoteTopY ?? 40;
-
-        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        arrow.setAttribute('points', `${xEnd},${topY - 18} ${xEnd - 16},${topY - 9} ${xEnd},${topY}`);
-        arrow.setAttribute('fill', '#ea580c');
-        arrow.setAttribute('stroke', '#ffffff');
-        arrow.setAttribute('stroke-width', '1.5');
-        arrow.setAttribute('stroke-linejoin', 'round');
-
-        outGroup.appendChild(arrow);
-        svg.appendChild(outGroup);
-      }
-    } else if (loopRange.endMeasure !== undefined && loopRange.endMeasure >= 0 && loopRange.endMeasure !== loopRange.startMeasure) {
+    if (loopRange.endMeasure !== undefined && loopRange.endMeasure >= 0 && (loopRange.endMeasure !== loopRange.startMeasure || loopRange.endBeat !== loopRange.startBeat)) {
       const gMeasure = getGraphicMeasure(loopRange.endMeasure);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
@@ -518,7 +424,10 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
           audioPlaybackService.clearLoop();
         };
 
-        const xEnd = gMeasure.x + gMeasure.width;
+        const measureRange = audioPlaybackService.getMeasureBeatRange(Math.max(0, loopRange.endMeasure - 1)) || { startBeat: 0, endBeat: 4 };
+        const mDur = Math.max(0.001, measureRange.endBeat - measureRange.startBeat);
+        const outProgress = Math.max(0, Math.min(1, (loopRange.endBeat - measureRange.startBeat) / mDur));
+        const xEnd = gMeasure.x + (gMeasure.width * outProgress);
         const topY = gMeasure.topY;
 
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -568,22 +477,13 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
       const minBeat = Math.min(startBeat, endBeat);
       const maxBeat = Math.max(startBeat, endBeat);
+      const minM = startBeat <= endBeat ? startM : endM;
+      const maxM = startBeat <= endBeat ? endM : startM;
 
-      audioPlaybackService.setLoop(minBeat, maxBeat, startM, endM, {
-        startNoteX: playbackState.loopRange.startNoteX ?? note.x,
-        startNoteTopY: playbackState.loopRange.startNoteTopY ?? note.topY,
-        startNotePageIndex: playbackState.loopRange.startNotePageIndex ?? pageIndex,
-        endNoteX: note.x,
-        endNoteTopY: note.topY,
-        endNotePageIndex: pageIndex,
-      });
+      audioPlaybackService.setLoop(minBeat, maxBeat, minM, maxM);
     } else {
       // Normal Click: Set IN point at this note and seek playback
-      audioPlaybackService.setInCue(note.timeInBeats, note.measureNum, {
-        x: note.x,
-        topY: note.topY,
-        pageIndex,
-      });
+      audioPlaybackService.setInCue(note.timeInBeats, note.measureNum);
       audioPlaybackService.seek(note.timeInBeats);
     }
   }, [playbackState.loopRange, findClosestGraphicNote]);
