@@ -211,7 +211,56 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const svg = svgs[gMeasure.pageIndex];
         const measureDuration = Math.max(0.001, measureEndBeat - measureStartBeat);
         const progress = Math.max(0, Math.min(1, (currentBeat - measureStartBeat) / measureDuration));
-        const cursorX = gMeasure.x + (gMeasure.width * progress);
+
+        // Notehead-accurate cursor X positioning
+        let cursorX = gMeasure.x + (gMeasure.width * progress);
+        const staffEntries = (osmdRef.current?.GraphicSheet?.MusicPages?.[gMeasure.pageIndex]?.MusicSystems || [])
+          .flatMap((s: any) => s.StaffLines || [])
+          .flatMap((sl: any) => sl.Measures || [])
+          .find((m: any) => (m.MeasureNumber || 0) === (currentMeasureIndex + 1))?.staffEntries || [];
+
+        if (staffEntries.length > 0) {
+          const notesInMeasure = notes.filter(n => n.measureIndex === currentMeasureIndex);
+          const entriesWithTime: Array<{ x: number; time: number }> = [];
+
+          for (let seIdx = 0; seIdx < staffEntries.length; seIdx++) {
+            const se = staffEntries[seIdx];
+            const entryX = se.PositionAndShape.AbsolutePosition.x * 10;
+            const noteObj = notesInMeasure[Math.min(seIdx, notesInMeasure.length - 1)];
+            if (noteObj) {
+              entriesWithTime.push({ x: entryX, time: noteObj.timeInBeats });
+            }
+          }
+
+          if (entriesWithTime.length > 0) {
+            if (currentBeat <= entriesWithTime[0].time) {
+              cursorX = entriesWithTime[0].x;
+            } else if (currentBeat >= entriesWithTime[entriesWithTime.length - 1].time) {
+              const last = entriesWithTime[entriesWithTime.length - 1];
+              const endX = gMeasure.x + gMeasure.width;
+              const frac = Math.min(1, Math.max(0, (currentBeat - last.time) / Math.max(0.5, measureEndBeat - last.time)));
+              cursorX = last.x + (endX - last.x) * frac;
+            } else {
+              for (let i = 0; i < entriesWithTime.length - 1; i++) {
+                const cur = entriesWithTime[i];
+                const next = entriesWithTime[i + 1];
+                if (currentBeat >= cur.time && currentBeat < next.time) {
+                  const frac = (currentBeat - cur.time) / Math.max(0.001, next.time - cur.time);
+                  cursorX = cur.x + (next.x - cur.x) * frac;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // Snap directly to startNoteX if at the IN point
+        if (playbackState.loopRange?.startNoteX !== undefined &&
+            Math.abs(currentBeat - playbackState.loopRange.startBeat) < 0.05 &&
+            gMeasure.pageIndex === (playbackState.loopRange.startNotePageIndex ?? gMeasure.pageIndex)) {
+          cursorX = playbackState.loopRange.startNoteX;
+        }
+
         const topY = gMeasure.topY;
         const bottomY = gMeasure.bottomY;
 
