@@ -305,7 +305,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           handleTogglePlay();
           return;
         }
-        if (e.key === 'r' || e.key === 'R') {
+        if (e.key === 'r' || e.key === 'R' || e.key === 'ArrowLeft') {
           e.preventDefault();
           handleRewind();
           return;

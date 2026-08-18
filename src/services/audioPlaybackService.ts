@@ -65,6 +65,7 @@ class AudioPlaybackService {
   private masterGain: GainNode | null = null;
   private playbackTimeout: ReturnType<typeof setTimeout> | null = null;
   private cursorInterval: ReturnType<typeof setInterval> | null = null;
+  private loopPauseTimeout: ReturnType<typeof setTimeout> | null = null;
 
   private stateListeners: Set<StateListener> = new Set();
   private noteListeners: Set<NoteListener> = new Set();
@@ -566,13 +567,20 @@ class AudioPlaybackService {
     if (!this.loopEnabled || !this.loopRange) return;
     this.stopInternal(false);
     this.isCurrentlyPlaying = false;
-    this.isCurrentlyPaused = false;
+    this.isCurrentlyPaused = true;
     this.pausedTimeInBeats = this.loopRange.startBeat;
 
     this.notifyState();
-    this.play(this.activeBpm).catch(err => {
-      console.warn('Error looping playback:', err);
-    });
+
+    // 3-second practice pause before beginning next cycle from the IN point
+    this.loopPauseTimeout = setTimeout(() => {
+      this.loopPauseTimeout = null;
+      if (!this.loopEnabled || !this.loopRange) return;
+      this.isCurrentlyPaused = false;
+      this.play(this.activeBpm).catch(err => {
+        console.warn('Error looping playback:', err);
+      });
+    }, 3000);
   }
 
   public pause(): void {
@@ -592,6 +600,14 @@ class AudioPlaybackService {
     this.pausedTimeInBeats = this.loopEnabled && this.loopRange ? this.loopRange.startBeat : 0;
     this.stopInternal(true);
     this.notifyState();
+  }
+
+  public rewind(): void {
+    if (this.loopEnabled && this.loopRange) {
+      this.seek(this.loopRange.startBeat);
+    } else {
+      this.stop();
+    }
   }
 
   public seek(targetBeat: number): void {
@@ -625,6 +641,10 @@ class AudioPlaybackService {
   }
 
   private stopInternal(resetContext: boolean): void {
+    if (this.loopPauseTimeout) {
+      clearTimeout(this.loopPauseTimeout);
+      this.loopPauseTimeout = null;
+    }
     if (this.playbackTimeout) {
       clearTimeout(this.playbackTimeout);
       this.playbackTimeout = null;
