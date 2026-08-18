@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { normalizeMusicXmlForOsmd } from '../services/musicXmlService';
-import { audioPlaybackService, type ScheduledNoteEvent, type PlaybackState } from '../services/audioPlaybackService';
+import { audioPlaybackService, type PlaybackState } from '../services/audioPlaybackService';
 import { Loader2, AlertCircle } from 'lucide-react';
 
 // Declare OSMD global if loaded via script tag
@@ -31,29 +31,37 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   const [renderError, setRenderError] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<PlaybackState>(audioPlaybackService.getState());
 
-  // Automatically scroll the container to keep the active cursor comfortably in view
-  const autoScrollToCursor = useCallback((smooth: boolean = true) => {
+  // Helper: Retrieve graphical measure bounds from OSMD GraphicSheet
+  const getGraphicMeasure = useCallback((targetMeasureNum: number) => {
     const osmd = osmdRef.current;
-    const scrollContainer = scrollContainerRef.current;
-    if (!osmd?.cursor?.cursorElement || !scrollContainer) return;
+    if (!osmd?.GraphicSheet?.MusicPages) return null;
 
-    const cursorEl = osmd.cursor.cursorElement;
-    const cursorRect = cursorEl.getBoundingClientRect();
-    const containerRect = scrollContainer.getBoundingClientRect();
-
-    // Trigger scroll if cursor moves into top 15% or bottom 35% of the viewport
-    const idealTop = containerRect.top + containerRect.height * 0.28;
-    const topThreshold = containerRect.top + 70;
-    const bottomThreshold = containerRect.bottom - 160;
-
-    if (cursorRect.top < topThreshold || cursorRect.bottom > bottomThreshold) {
-      const scrollDiff = cursorRect.top - idealTop;
-      scrollContainer.scrollBy({
-        top: scrollDiff,
-        behavior: smooth ? 'smooth' : 'auto',
-      });
+    for (let pIdx = 0; pIdx < osmd.GraphicSheet.MusicPages.length; pIdx++) {
+      const page = osmd.GraphicSheet.MusicPages[pIdx];
+      for (const system of page.MusicSystems || []) {
+        for (const staffLine of system.StaffLines || []) {
+          for (const m of staffLine.Measures || []) {
+            if (m.MeasureNumber === targetMeasureNum) {
+              const pos = m.PositionAndShape;
+              if (pos) {
+                return {
+                  pageIndex: pIdx,
+                  x: pos.AbsolutePosition.x * 10,
+                  y: pos.AbsolutePosition.y * 10,
+                  width: pos.Size.width * 10,
+                  height: (pos.BorderBottom - pos.BorderTop) * 10 || 50,
+                  topY: (pos.AbsolutePosition.y + pos.BorderTop) * 10,
+                  bottomY: (pos.AbsolutePosition.y + pos.BorderBottom) * 10,
+                };
+              }
+            }
+          }
+        }
+      }
     }
+    return null;
   }, []);
+
 
   // Listen to playback state & synchronize cues from single source of truth
   useEffect(() => {
@@ -62,22 +70,6 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     });
   }, []);
 
-  // Jump OSMD visual cursor to specific measure and scroll into view
-  const jumpCursorToMeasure = useCallback((targetMeasureIndex: number) => {
-    const osmd = osmdRef.current;
-    if (!osmd?.cursor) return;
-
-    try {
-      osmd.cursor.reset();
-      while (!osmd.cursor.iterator.EndReached && osmd.cursor.iterator.CurrentMeasureIndex < targetMeasureIndex) {
-        osmd.cursor.next();
-      }
-      osmd.cursor.show();
-      setTimeout(() => autoScrollToCursor(true), 60);
-    } catch (err) {
-      console.warn('Error jumping OSMD cursor:', err);
-    }
-  }, [autoScrollToCursor]);
 
   // Initialize and render OSMD score
   const renderScore = useCallback(async () => {
@@ -121,6 +113,12 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       });
 
       if (osmd.cursor) {
+        osmd.cursor.cursorOptions = {
+          type: 0,
+          color: '#ea580c',
+          alpha: 0.85,
+          follow: false,
+        };
         osmd.cursor.show();
         osmd.cursor.reset();
       }
@@ -158,43 +156,131 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
   }, [zoom, loading]);
 
-  // Cursor tracking during playback
+  // Real-time Visual Playback Tracking Line & Auto-Scroll (60 FPS)
   useEffect(() => {
-    let lastStepTime = -1;
+    let animId: number;
 
-    const unsubscribeNote = audioPlaybackService.subscribeNote((_event: ScheduledNoteEvent, currentBeat: number) => {
-      if (!osmdRef.current?.cursor) return;
+    const updatePlaybackCursor = () => {
+      const isPlaying = playbackState.isPlaying;
+      const isPaused = playbackState.isPaused;
+      const svgs = containerRef.current?.querySelectorAll('svg');
+      if (!svgs || svgs.length === 0 || !osmdRef.current?.GraphicSheet) {
+        if (isPlaying) animId = requestAnimationFrame(updatePlaybackCursor);
+        return;
+      }
 
-      if (currentBeat > lastStepTime) {
-        lastStepTime = currentBeat;
-        try {
-          osmdRef.current.cursor.next();
-          autoScrollToCursor(true);
-        } catch {
-          // ignore cursor edge bounds
+      // Clear previous playback cursor lines across all SVG pages
+      svgs.forEach(s => {
+        const oldLine = s.querySelector('.scoretone-playback-cursor');
+        if (oldLine) oldLine.remove();
+      });
+
+      if (!isPlaying && !isPaused && playbackState.currentBeat === 0) {
+        return;
+      }
+
+      const currentBeat = audioPlaybackService.getCurrentBeat();
+      const notes = audioPlaybackService.getScheduledNotes();
+      if (notes.length === 0) {
+        if (isPlaying) animId = requestAnimationFrame(updatePlaybackCursor);
+        return;
+      }
+
+      // Determine current measure from current beat
+      let currentMeasureIndex = 0;
+      let measureStartBeat = 0;
+      let measureEndBeat = 4;
+
+      for (let m = 0; m < 2000; m++) {
+        const range = audioPlaybackService.getMeasureBeatRange(m);
+        if (!range) break;
+        if (currentBeat >= range.startBeat && currentBeat < range.endBeat) {
+          currentMeasureIndex = m;
+          measureStartBeat = range.startBeat;
+          measureEndBeat = range.endBeat;
+          break;
+        } else if (currentBeat >= range.endBeat) {
+          currentMeasureIndex = m;
+          measureStartBeat = range.startBeat;
+          measureEndBeat = range.endBeat;
         }
       }
-    });
 
-    const unsubscribeState = audioPlaybackService.subscribeState((state) => {
-      if (!osmdRef.current?.cursor) return;
+      const gMeasure = getGraphicMeasure(currentMeasureIndex + 1);
+      if (gMeasure && svgs[gMeasure.pageIndex]) {
+        const svg = svgs[gMeasure.pageIndex];
+        const measureDuration = Math.max(0.001, measureEndBeat - measureStartBeat);
+        const progress = Math.max(0, Math.min(1, (currentBeat - measureStartBeat) / measureDuration));
+        const cursorX = gMeasure.x + (gMeasure.width * progress);
+        const topY = gMeasure.topY;
+        const bottomY = gMeasure.bottomY;
 
-      if (!state.isPlaying && !state.isPaused && state.currentBeat === 0) {
-        lastStepTime = -1;
-        try {
-          osmdRef.current.cursor.reset();
-          osmdRef.current.cursor.show();
-          scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-        } catch {
-          // ignore
+        // Render SVG cursor line
+        const cursorGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        cursorGroup.setAttribute('class', 'scoretone-playback-cursor');
+        cursorGroup.setAttribute('style', 'pointer-events: none;');
+
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', `${cursorX}`);
+        line.setAttribute('y1', `${topY - 4}`);
+        line.setAttribute('x2', `${cursorX}`);
+        line.setAttribute('y2', `${bottomY + 4}`);
+        line.setAttribute('stroke', '#ea580c');
+        line.setAttribute('stroke-width', '2.5');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('style', 'filter: drop-shadow(0 0 5px rgba(234, 88, 12, 0.85));');
+
+        cursorGroup.appendChild(line);
+        svg.appendChild(cursorGroup);
+
+        // Auto-scroll when the playback line reaches the bottom of what's currently visible
+        const scrollContainer = scrollContainerRef.current;
+        if (scrollContainer && isPlaying) {
+          const pt = svg.createSVGPoint();
+          pt.x = cursorX;
+          pt.y = bottomY;
+          const ctm = svg.getScreenCTM();
+          if (ctm) {
+            const screenPt = pt.matrixTransform(ctm);
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const bottomThreshold = containerRect.bottom - 130;
+            const topThreshold = containerRect.top + 40;
+
+            if (screenPt.y > bottomThreshold || screenPt.y < topThreshold) {
+              const idealScreenTop = containerRect.top + 80;
+              const topPt = svg.createSVGPoint();
+              topPt.x = cursorX;
+              topPt.y = topY;
+              const screenTopPt = topPt.matrixTransform(ctm);
+              const scrollDiff = screenTopPt.y - idealScreenTop;
+              scrollContainer.scrollBy({
+                top: scrollDiff,
+                behavior: 'smooth',
+              });
+            }
+          }
         }
       }
-    });
+
+      if (isPlaying) {
+        animId = requestAnimationFrame(updatePlaybackCursor);
+      }
+    };
+
+    updatePlaybackCursor();
 
     return () => {
-      unsubscribeNote();
-      unsubscribeState();
+      if (animId) cancelAnimationFrame(animId);
     };
+  }, [playbackState.isPlaying, playbackState.isPaused, playbackState.currentBeat, getGraphicMeasure]);
+
+  // Handle stop / rewind scroll to top
+  useEffect(() => {
+    return audioPlaybackService.subscribeState((state) => {
+      if (!state.isPlaying && !state.isPaused && state.currentBeat === 0) {
+        scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    });
   }, []);
 
   // Mount effect
@@ -212,38 +298,74 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     return () => clearTimeout(timer);
   }, [renderScore]);
 
-  // Helper: Retrieve graphical measure bounds from OSMD GraphicSheet
-  const getGraphicMeasure = useCallback((targetMeasureNum: number) => {
+  // Helper: Find closest individual musical note to click coordinates
+  const findClosestGraphicNote = useCallback((clickX: number, clickY: number, pageIndex: number) => {
     const osmd = osmdRef.current;
     if (!osmd?.GraphicSheet?.MusicPages) return null;
 
-    for (let pIdx = 0; pIdx < osmd.GraphicSheet.MusicPages.length; pIdx++) {
-      const page = osmd.GraphicSheet.MusicPages[pIdx];
-      for (const system of page.MusicSystems || []) {
-        for (const staffLine of system.StaffLines || []) {
-          for (const m of staffLine.Measures || []) {
-            if (m.MeasureNumber === targetMeasureNum) {
-              const pos = m.PositionAndShape;
-              if (pos) {
-                return {
-                  pageIndex: pIdx,
-                  x: pos.AbsolutePosition.x * 10,
-                  y: pos.AbsolutePosition.y * 10,
-                  width: pos.Size.width * 10,
-                  height: (pos.BorderBottom - pos.BorderTop) * 10 || 50,
-                  topY: (pos.AbsolutePosition.y + pos.BorderTop) * 10,
-                  bottomY: (pos.AbsolutePosition.y + pos.BorderBottom) * 10,
-                };
-              }
+    const page = osmd.GraphicSheet.MusicPages[pageIndex];
+    if (!page) return null;
+
+    let closestNote: {
+      x: number;
+      topY: number;
+      bottomY: number;
+      pageIndex: number;
+      measureNum: number;
+      timeInBeats: number;
+      durationInBeats: number;
+    } | null = null;
+    let minDistance = Infinity;
+
+    const scheduled = audioPlaybackService.getScheduledNotes();
+
+    for (const system of page.MusicSystems || []) {
+      for (const staffLine of system.StaffLines || []) {
+        for (let mIdx = 0; mIdx < (staffLine.Measures || []).length; mIdx++) {
+          const m = staffLine.Measures[mIdx];
+          const mPos = m.PositionAndShape;
+          if (!mPos) continue;
+
+          const measureNum = m.MeasureNumber || (mIdx + 1);
+          const measureIndex = measureNum > 0 ? measureNum - 1 : mIdx;
+          const measureTopY = (mPos.AbsolutePosition.y + mPos.BorderTop) * 10;
+          const measureBottomY = (mPos.AbsolutePosition.y + mPos.BorderBottom) * 10;
+
+          const notesInMeasure = scheduled.filter(sn => sn.measureIndex === measureIndex);
+          if (notesInMeasure.length === 0) continue;
+
+          const staffEntries = m.staffEntries || [];
+
+          for (let seIdx = 0; seIdx < staffEntries.length; seIdx++) {
+            const staffEntry = staffEntries[seIdx];
+            const sePos = staffEntry.PositionAndShape;
+            const entryX = sePos.AbsolutePosition.x * 10;
+            const entryY = sePos.AbsolutePosition.y * 10;
+
+            const noteObj = notesInMeasure[Math.min(seIdx, notesInMeasure.length - 1)] || notesInMeasure[0];
+
+            const dist = Math.hypot(clickX - entryX, (clickY - entryY) * 1.5);
+            if (dist < minDistance) {
+              minDistance = dist;
+              closestNote = {
+                x: entryX,
+                topY: measureTopY,
+                bottomY: measureBottomY,
+                pageIndex,
+                measureNum,
+                timeInBeats: noteObj.timeInBeats,
+                durationInBeats: noteObj.durationInBeats,
+              };
             }
           }
         }
       }
     }
-    return null;
+
+    return closestNote;
   }, []);
 
-  // Render on-score [IN] and [OUT] cue badges directly in SVG with click-to-clear
+  // Render on-score [IN] and [OUT] cue badges directly in SVG above selected notes
   useEffect(() => {
     if (!containerRef.current || !osmdRef.current) return;
     const svgs = containerRef.current.querySelectorAll('svg');
@@ -255,12 +377,36 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       oldCues.forEach(el => el.remove());
     });
 
-    const startM = playbackState.loopRange?.startMeasure ?? null;
-    const endM = playbackState.loopRange?.endMeasure ?? null;
+    const loopRange = playbackState.loopRange;
+    if (!loopRange) return;
 
     // Render IN Cue (Triangle pointing forward / right)
-    if (startM !== null && startM >= 0) {
-      const gMeasure = getGraphicMeasure(startM);
+    if (loopRange.startNoteX !== undefined && loopRange.startNotePageIndex !== undefined) {
+      const svg = svgs[loopRange.startNotePageIndex];
+      if (svg) {
+        const inGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        inGroup.setAttribute('class', 'scoretone-cue-badge');
+        inGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
+        inGroup.onclick = (e) => {
+          e.stopPropagation();
+          audioPlaybackService.clearLoop();
+        };
+
+        const x = loopRange.startNoteX;
+        const topY = loopRange.startNoteTopY ?? 40;
+
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${x},${topY - 18} ${x + 16},${topY - 9} ${x},${topY}`);
+        arrow.setAttribute('fill', '#ea580c');
+        arrow.setAttribute('stroke', '#ffffff');
+        arrow.setAttribute('stroke-width', '1.5');
+        arrow.setAttribute('stroke-linejoin', 'round');
+
+        inGroup.appendChild(arrow);
+        svg.appendChild(inGroup);
+      }
+    } else if (loopRange.startMeasure !== undefined && loopRange.startMeasure >= 0) {
+      const gMeasure = getGraphicMeasure(loopRange.startMeasure);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
         const inGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -274,7 +420,6 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const x = gMeasure.x;
         const topY = gMeasure.topY;
 
-        // Forward / Right-pointing triangle arrow (enlarged, no text)
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         arrow.setAttribute('points', `${x},${topY - 18} ${x + 16},${topY - 9} ${x},${topY}`);
         arrow.setAttribute('fill', '#ea580c');
@@ -288,8 +433,32 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
 
     // Render OUT Cue (Triangle pointing backward / left)
-    if (endM !== null && endM >= 0 && endM !== startM) {
-      const gMeasure = getGraphicMeasure(endM);
+    if (loopRange.endNoteX !== undefined && loopRange.endNotePageIndex !== undefined) {
+      const svg = svgs[loopRange.endNotePageIndex];
+      if (svg) {
+        const outGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        outGroup.setAttribute('class', 'scoretone-cue-badge');
+        outGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
+        outGroup.onclick = (e) => {
+          e.stopPropagation();
+          audioPlaybackService.clearLoop();
+        };
+
+        const xEnd = loopRange.endNoteX;
+        const topY = loopRange.endNoteTopY ?? 40;
+
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${xEnd},${topY - 18} ${xEnd - 16},${topY - 9} ${xEnd},${topY}`);
+        arrow.setAttribute('fill', '#ea580c');
+        arrow.setAttribute('stroke', '#ffffff');
+        arrow.setAttribute('stroke-width', '1.5');
+        arrow.setAttribute('stroke-linejoin', 'round');
+
+        outGroup.appendChild(arrow);
+        svg.appendChild(outGroup);
+      }
+    } else if (loopRange.endMeasure !== undefined && loopRange.endMeasure >= 0 && loopRange.endMeasure !== loopRange.startMeasure) {
+      const gMeasure = getGraphicMeasure(loopRange.endMeasure);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
         const outGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -303,7 +472,6 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const xEnd = gMeasure.x + gMeasure.width;
         const topY = gMeasure.topY;
 
-        // Backward / Left-pointing triangle arrow (enlarged, no text)
         const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         arrow.setAttribute('points', `${xEnd},${topY - 18} ${xEnd - 16},${topY - 9} ${xEnd},${topY}`);
         arrow.setAttribute('fill', '#ea580c');
@@ -317,14 +485,18 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
   }, [playbackState.loopRange, getGraphicMeasure]);
 
-  // Click on score: find exact measure from OSMD geometric layout
+  // Click on score: select exact note for IN / OUT cue points
   const handleScoreClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current || !osmdRef.current?.GraphicSheet) return;
     const target = e.target as HTMLElement | SVGElement;
     const svg = target.closest('svg') as SVGSVGElement | null;
     if (!svg) return;
 
-    // Transform screen click coordinates to exact SVG vector coordinates
+    // Find which SVG page was clicked
+    const svgs = Array.from(containerRef.current.querySelectorAll('svg'));
+    const pageIndex = Math.max(0, svgs.indexOf(svg));
+
+    // Transform screen click coordinates to SVG vector coordinates
     const pt = svg.createSVGPoint();
     pt.x = e.clientX;
     pt.y = e.clientY;
@@ -334,75 +506,38 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     const clickX = svgP.x;
     const clickY = svgP.y;
 
-    // Search OSMD measures geometrically
-    let clickedMeasureNum: number | null = null;
-    let minDistance = Infinity;
+    // Find closest note to click
+    const note = findClosestGraphicNote(clickX, clickY, pageIndex);
+    if (!note) return;
 
-    const osmd = osmdRef.current;
-    for (const page of osmd.GraphicSheet.MusicPages || []) {
-      for (const system of page.MusicSystems || []) {
-        for (const staffLine of system.StaffLines || []) {
-          const measures = staffLine.Measures || [];
-          for (let mIdx = 0; mIdx < measures.length; mIdx++) {
-            const m = measures[mIdx];
-            const pos = m.PositionAndShape;
-            if (pos && m.MeasureNumber !== undefined) {
-              // For first measure on staff, extend x0 to 0 to catch clef/key signature clicks
-              const x0 = mIdx === 0 ? 0 : pos.AbsolutePosition.x * 10;
-              const x1 = (pos.AbsolutePosition.x + pos.Size.width) * 10;
-              const y0 = (pos.AbsolutePosition.y + pos.BorderTop) * 10;
-              const y1 = (pos.AbsolutePosition.y + pos.BorderBottom) * 10;
+    if (e.shiftKey && playbackState.loopRange?.startBeat !== undefined) {
+      // Shift+Click: Set OUT point at this note and activate loop
+      const startBeat = playbackState.loopRange.startBeat;
+      const endBeat = note.timeInBeats + note.durationInBeats;
+      const startM = playbackState.loopRange.startMeasure || note.measureNum;
+      const endM = note.measureNum;
 
-              // Check if inside measure box with vertical tolerance
-              if (clickX >= x0 && clickX <= x1 && clickY >= (y0 - 30) && clickY <= (y1 + 30)) {
-                clickedMeasureNum = m.MeasureNumber;
-                break;
-              }
+      const minBeat = Math.min(startBeat, endBeat);
+      const maxBeat = Math.max(startBeat, endBeat);
 
-              // Track nearest measure center
-              const centerX = (pos.AbsolutePosition.x * 10 + x1) / 2;
-              const centerY = (y0 + y1) / 2;
-              const dist = Math.hypot(clickX - centerX, (clickY - centerY) * 1.8);
-              if (dist < minDistance) {
-                minDistance = dist;
-                clickedMeasureNum = m.MeasureNumber;
-              }
-            }
-          }
-          if (clickedMeasureNum !== null && minDistance === 0) break;
-        }
-      }
-    }
-
-    if (clickedMeasureNum === null) return;
-
-    // Toggle off if clicking the exact same measure when only IN is set
-    if (playbackState.loopRange?.startMeasure === clickedMeasureNum && !playbackState.loopRange.endMeasure && !e.shiftKey) {
-      audioPlaybackService.clearLoop();
-      return;
-    }
-
-    const measureIndex = Math.max(0, clickedMeasureNum > 0 ? clickedMeasureNum - 1 : 0);
-    const measureRange = audioPlaybackService.getMeasureBeatRange(measureIndex) || { startBeat: 0, endBeat: 4 };
-
-    if (e.shiftKey && playbackState.loopRange?.startMeasure !== undefined) {
-      // Shift+Click: Set OUT Cue point and enable loop
-      const startM = Math.min(playbackState.loopRange.startMeasure, clickedMeasureNum);
-      const endM = Math.max(playbackState.loopRange.startMeasure, clickedMeasureNum);
-      const startRange = audioPlaybackService.getMeasureBeatRange(Math.max(0, startM - 1));
-      const endRange = audioPlaybackService.getMeasureBeatRange(Math.max(0, endM - 1));
-
-      if (startRange && endRange) {
-        audioPlaybackService.setLoop(startRange.startBeat, endRange.endBeat, startM, endM);
-        jumpCursorToMeasure(Math.max(0, startM - 1));
-      }
+      audioPlaybackService.setLoop(minBeat, maxBeat, startM, endM, {
+        startNoteX: playbackState.loopRange.startNoteX ?? note.x,
+        startNoteTopY: playbackState.loopRange.startNoteTopY ?? note.topY,
+        startNotePageIndex: playbackState.loopRange.startNotePageIndex ?? pageIndex,
+        endNoteX: note.x,
+        endNoteTopY: note.topY,
+        endNotePageIndex: pageIndex,
+      });
     } else {
-      // Normal Click: Set IN Cue point, seek playback to measure, and play forward without loop
-      audioPlaybackService.setInCue(measureRange.startBeat, clickedMeasureNum);
-      audioPlaybackService.seek(measureRange.startBeat);
-      jumpCursorToMeasure(measureIndex);
+      // Normal Click: Set IN point at this note and seek playback
+      audioPlaybackService.setInCue(note.timeInBeats, note.measureNum, {
+        x: note.x,
+        topY: note.topY,
+        pageIndex,
+      });
+      audioPlaybackService.seek(note.timeInBeats);
     }
-  }, [playbackState.loopRange, jumpCursorToMeasure]);
+  }, [playbackState.loopRange, findClosestGraphicNote]);
 
   return (
     <div
@@ -439,6 +574,9 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
       {/* Scoped styles for OSMD rendered SVG score pages */}
       <style>{`
+        .osmd-score-canvas {
+          position: relative !important;
+        }
         .osmd-score-canvas svg {
           max-width: 100% !important;
           height: auto !important;

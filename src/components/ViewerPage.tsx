@@ -260,8 +260,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   }, [playbackState.bpm]);
 
   const handleRewind = useCallback(() => {
-    audioPlaybackService.stop();
-  }, []);
+    if (playbackState.loopEnabled && playbackState.loopRange) {
+      audioPlaybackService.seek(playbackState.loopRange.startBeat);
+    } else {
+      audioPlaybackService.stop();
+    }
+  }, [playbackState.loopEnabled, playbackState.loopRange]);
 
   const handleBpmChange = useCallback((newBpm: number) => {
     audioPlaybackService.setTempo(newBpm);
@@ -278,12 +282,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   }, []);
 
   const handleToggleLoop = useCallback(() => {
-    if (playbackState.loopEnabled || playbackState.loopRange !== null) {
-      audioPlaybackService.clearLoop();
-    } else {
-      audioPlaybackService.toggleLoop();
-    }
-  }, [playbackState.loopEnabled, playbackState.loopRange]);
+    audioPlaybackService.toggleLoop();
+  }, []);
 
   const handleClearLoop = useCallback(() => {
     audioPlaybackService.clearLoop();

@@ -18,6 +18,12 @@ export interface LoopRange {
   endBeat: number;
   startMeasure?: number;
   endMeasure?: number;
+  startNoteX?: number;
+  startNoteTopY?: number;
+  startNotePageIndex?: number;
+  endNoteX?: number;
+  endNoteTopY?: number;
+  endNotePageIndex?: number;
 }
 
 export interface PlaybackState {
@@ -201,9 +207,10 @@ class AudioPlaybackService {
 
     let maxBeatsOverall = 0;
 
-    parts.forEach(part => {
+    parts.forEach((part, partIndex) => {
       const measures = part.querySelectorAll('measure');
       let partTime = 0;
+      const activeTies = new Map<string, ScheduledNoteEvent>();
 
       measures.forEach((measure, measureIndex) => {
         let lastNoteDuration = 0;
@@ -233,15 +240,33 @@ class AudioPlaybackService {
                   const midi = this.parsePitchToMidi(pitchEl);
                   const frequency = this.midiToFrequency(midi);
                   const voice = parseInt(child.querySelector('voice')?.textContent || '1', 10);
+                  const tieKey = `${partIndex}_${voice}_${midi}`;
 
-                  this.scheduledNotes.push({
-                    timeInBeats: noteStartTime,
-                    durationInBeats,
-                    midi,
-                    frequency,
-                    voice,
-                    measureIndex,
-                  });
+                  const isTieStop = !!child.querySelector('tie[type="stop"]') || !!child.querySelector('tied[type="stop"]');
+                  const isTieStart = !!child.querySelector('tie[type="start"]') || !!child.querySelector('tied[type="start"]');
+
+                  if (isTieStop && activeTies.has(tieKey)) {
+                    // Extend the duration of the previous tied note without re-triggering sound
+                    const prevNote = activeTies.get(tieKey)!;
+                    prevNote.durationInBeats += durationInBeats;
+                    if (!isTieStart) {
+                      activeTies.delete(tieKey);
+                    }
+                  } else {
+                    const newEvent: ScheduledNoteEvent = {
+                      timeInBeats: noteStartTime,
+                      durationInBeats,
+                      midi,
+                      frequency,
+                      voice,
+                      measureIndex,
+                    };
+                    this.scheduledNotes.push(newEvent);
+
+                    if (isTieStart) {
+                      activeTies.set(tieKey, newEvent);
+                    }
+                  }
                 } catch (err) {
                   console.warn('Error parsing note pitch:', err);
                 }
@@ -283,15 +308,42 @@ class AudioPlaybackService {
     };
   }
 
-  public setInCue(startBeat: number, startMeasure?: number): void {
-    this.loopRange = { startBeat, endBeat: this.totalBeats, startMeasure, endMeasure: undefined };
+  public setInCue(startBeat: number, startMeasure?: number, noteMeta?: { x?: number; topY?: number; pageIndex?: number }): void {
+    this.loopRange = {
+      startBeat,
+      endBeat: this.totalBeats,
+      startMeasure,
+      endMeasure: undefined,
+      startNoteX: noteMeta?.x,
+      startNoteTopY: noteMeta?.topY,
+      startNotePageIndex: noteMeta?.pageIndex,
+    };
     this.loopEnabled = false;
     this.notifyState();
   }
 
-  public setLoop(startBeat: number, endBeat: number, startMeasure?: number, endMeasure?: number): void {
+  public setLoop(
+    startBeat: number,
+    endBeat: number,
+    startMeasure?: number,
+    endMeasure?: number,
+    noteMeta?: {
+      startNoteX?: number;
+      startNoteTopY?: number;
+      startNotePageIndex?: number;
+      endNoteX?: number;
+      endNoteTopY?: number;
+      endNotePageIndex?: number;
+    }
+  ): void {
     if (startBeat >= endBeat) return;
-    this.loopRange = { startBeat, endBeat, startMeasure, endMeasure };
+    this.loopRange = {
+      startBeat,
+      endBeat,
+      startMeasure,
+      endMeasure,
+      ...noteMeta,
+    };
     this.loopEnabled = true;
 
     const current = this.getCurrentBeat();
@@ -304,7 +356,10 @@ class AudioPlaybackService {
 
   public toggleLoop(enabled?: boolean): void {
     this.loopEnabled = enabled !== undefined ? enabled : !this.loopEnabled;
-    if (this.loopEnabled && this.loopRange) {
+    if (this.loopEnabled) {
+      if (!this.loopRange) {
+        this.loopRange = { startBeat: 0, endBeat: this.totalBeats, startMeasure: 1, endMeasure: undefined };
+      }
       const current = this.getCurrentBeat();
       if (current < this.loopRange.startBeat || current >= this.loopRange.endBeat) {
         this.seek(this.loopRange.startBeat);
@@ -472,7 +527,7 @@ class AudioPlaybackService {
       if (!this.isCurrentlyPlaying || !this.audioContext) return;
       const currentBeat = this.getCurrentBeat();
 
-      // Check loop wrap-around
+      // Instant loop wrap-around when reaching the out-point
       if (this.loopEnabled && this.loopRange && currentBeat >= this.loopRange.endBeat) {
         this.restartLoopCycle();
         return;
@@ -489,9 +544,9 @@ class AudioPlaybackService {
           break;
         }
       }
-    }, 30);
+    }, 20);
 
-    // Timeout when piece or loop completes
+    // Timeout fallback when piece or loop completes
     const remainingBeats = Math.max(0, loopEnd - this.pausedTimeInBeats);
     const totalPlaybackDurationSec = countInDuration + (remainingBeats * secondsPerBeat);
 
@@ -502,7 +557,7 @@ class AudioPlaybackService {
       } else {
         this.stop();
       }
-    }, (totalPlaybackDurationSec * 1000) + 50);
+    }, Math.max(0, totalPlaybackDurationSec * 1000));
 
     this.notifyState();
   }
@@ -510,17 +565,14 @@ class AudioPlaybackService {
   private restartLoopCycle(): void {
     if (!this.loopEnabled || !this.loopRange) return;
     this.stopInternal(false);
+    this.isCurrentlyPlaying = false;
+    this.isCurrentlyPaused = false;
     this.pausedTimeInBeats = this.loopRange.startBeat;
 
-    // Find start note in loop and notify cursor immediately
-    const startNote = this.scheduledNotes.find(
-      n => n.timeInBeats >= this.loopRange!.startBeat && n.timeInBeats < this.loopRange!.endBeat
-    );
-    if (startNote) {
-      this.noteListeners.forEach(l => l(startNote, this.loopRange!.startBeat));
-    }
-
-    this.play(this.activeBpm);
+    this.notifyState();
+    this.play(this.activeBpm).catch(err => {
+      console.warn('Error looping playback:', err);
+    });
   }
 
   public pause(): void {

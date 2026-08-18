@@ -68,4 +68,41 @@ assert.strictEqual(computeLoopWrap(18, 4, 16), 4, 'Loop boundary wrap failed bey
 assert.strictEqual(computeLoopWrap(8, 4, 16), 8, 'Loop calculation incorrect inside loop');
 console.log('✅ Loop bounds logic passed!');
 
+// Helper: Tied notes merging logic test
+function processTiedNotes(rawNotes) {
+  const scheduled = [];
+  const activeTies = new Map();
+
+  rawNotes.forEach(n => {
+    const tieKey = `${n.voice}_${n.midi}`;
+    if (n.isTieStop && activeTies.has(tieKey)) {
+      const prev = activeTies.get(tieKey);
+      prev.durationInBeats += n.durationInBeats;
+      if (!n.isTieStart) {
+        activeTies.delete(tieKey);
+      }
+    } else {
+      const evt = { ...n };
+      scheduled.push(evt);
+      if (n.isTieStart) {
+        activeTies.set(tieKey, evt);
+      }
+    }
+  });
+
+  return scheduled;
+}
+
+console.log('🧪 Testing Tied Notes duration merging...');
+const sampleNotes = [
+  { midi: 60, voice: 1, durationInBeats: 4, isTieStart: true, isTieStop: false },
+  { midi: 60, voice: 1, durationInBeats: 2, isTieStart: false, isTieStop: true },
+  { midi: 64, voice: 1, durationInBeats: 2, isTieStart: false, isTieStop: false },
+];
+const processed = processTiedNotes(sampleNotes);
+assert.strictEqual(processed.length, 2, 'Tied continuation note should not produce separate sound event');
+assert.strictEqual(processed[0].durationInBeats, 6, 'Tied note should merge durations (4 + 2 = 6)');
+assert.strictEqual(processed[1].midi, 64, 'Subsequent note should remain intact');
+console.log('✅ Tied Notes duration merging passed!');
+
 console.log('🎉 All MusicXML unit tests passed successfully!');

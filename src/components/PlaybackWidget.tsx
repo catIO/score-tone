@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Pause, RotateCcw, ChevronDown, Volume2, VolumeX, Clock, Repeat } from 'lucide-react';
+import { Play, Pause, SkipBack, ChevronDown, Volume2, VolumeX, Clock, Repeat } from 'lucide-react';
 import type { PlaybackState } from '../services/audioPlaybackService';
 
 interface PlaybackWidgetProps {
@@ -53,54 +53,54 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
     }
   };
 
-  const isLoopActive = playbackState.loopEnabled || playbackState.loopRange !== null;
+  const isLoopActive = playbackState.loopEnabled;
 
   return (
-    <div className="relative inline-flex items-center gap-1 bg-[#1a1a22] border border-[#2e2e3a] rounded-full px-1 py-0.5 shadow-sm select-none" ref={popoverRef}>
-      {/* Rewind Button */}
+    <div className="relative inline-flex items-center gap-1 bg-[#1a1a24] border border-[#2e2e3e] rounded-xl px-1.5 py-1 shadow-md select-none" ref={popoverRef}>
+      {/* Rewind Button: In loop mode -> go to IN point; in normal mode -> go to beginning */}
       <button
         onClick={onRewind}
-        className="w-8 h-8 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:bg-white/20 transition-all focus:outline-none"
-        title="Rewind to Start (R)"
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:bg-white/20 transition-all focus:outline-none"
+        title={
+          isLoopActive && playbackState.loopRange
+            ? `Go to In Point (m. ${playbackState.loopRange.startMeasure || '1'}) (R)`
+            : 'Go to Beginning (R)'
+        }
         aria-label="Rewind"
       >
-        <RotateCcw className="w-3.5 h-3.5" />
+        <SkipBack className="w-4 h-4 fill-current" />
       </button>
 
       {/* Play / Pause Toggle Button */}
       <button
         onClick={onTogglePlay}
-        className={`w-8 h-8 rounded-full flex items-center justify-center font-medium transition-all focus:outline-none ${
-          playbackState.isPlaying
-            ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm'
-            : 'bg-orange-600 hover:bg-orange-500 text-white shadow-sm'
-        }`}
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-white/10 active:bg-white/20 transition-all focus:outline-none"
         title={playbackState.isPlaying ? 'Pause (Space)' : 'Play (Space)'}
         aria-label={playbackState.isPlaying ? 'Pause' : 'Play'}
       >
         {playbackState.isPlaying ? (
-          <Pause className="w-3.5 h-3.5 fill-current" />
+          <Pause className="w-4 h-4 fill-current" />
         ) : (
-          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+          <Play className="w-4 h-4 fill-current ml-0.5" />
         )}
       </button>
 
-      {/* Loop Button: Click to clear when on, or toggle */}
+      {/* Loop Mode Toggle Button */}
       <button
         onClick={onToggleLoop}
-        className={`w-8 h-8 rounded-full flex items-center justify-center transition-all focus:outline-none ${
+        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all focus:outline-none ${
           isLoopActive
-            ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40 shadow-sm'
+            ? 'bg-orange-500/25 text-orange-400 border border-orange-500/50 shadow-sm'
             : 'text-slate-400 hover:text-white hover:bg-white/10'
         }`}
         title={
           isLoopActive
-            ? `Loop Active (${playbackState.loopRange ? `m.${playbackState.loopRange.startMeasure}–${playbackState.loopRange.endMeasure}` : 'On'}) — Click to clear (L)`
-            : 'Enable Loop (L)'
+            ? `Loop Mode: ON (${playbackState.loopRange ? `m.${playbackState.loopRange.startMeasure}–${playbackState.loopRange.endMeasure}` : 'Active'}) — Click to toggle (L)`
+            : 'Enable Loop Mode (L)'
         }
-        aria-label="Toggle Loop"
+        aria-label="Toggle Loop Mode"
       >
-        <Repeat className="w-3.5 h-3.5" />
+        <Repeat className="w-4 h-4" />
       </button>
 
       {/* Count-In Pulse Badge (visible during count-in) */}
@@ -114,7 +114,7 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
       {/* BPM & Settings Popover Trigger */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1 px-2.5 h-8 rounded-full text-xs font-semibold transition-all focus:outline-none ${
+        className={`flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all focus:outline-none ${
           isOpen
             ? 'bg-white/15 text-white'
             : 'text-slate-300 hover:text-white hover:bg-white/10'
@@ -122,9 +122,9 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
         title="Tempo & Playback Settings"
         aria-expanded={isOpen}
       >
-        <span className="tabular-nums font-mono">{playbackState.bpm}</span>
-        <span className="text-[10px] text-slate-400 font-normal">BPM</span>
-        <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <span className="text-sm font-serif leading-none font-bold text-slate-300">♩</span>
+        <span className="tabular-nums font-mono text-xs">{playbackState.bpm}</span>
+        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Popover Card */}
