@@ -211,7 +211,15 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const svg = svgs[gMeasure.pageIndex];
         const measureDuration = Math.max(0.001, measureEndBeat - measureStartBeat);
         const progress = Math.max(0, Math.min(1, (currentBeat - measureStartBeat) / measureDuration));
-        const cursorX = gMeasure.x + (gMeasure.width * progress);
+        let cursorX = gMeasure.x + (gMeasure.width * progress);
+
+        // Snap to exact selected notehead when at IN point
+        if (playbackState.loopRange?.startNoteX !== undefined &&
+            Math.abs(currentBeat - playbackState.loopRange.startBeat) < 0.05 &&
+            gMeasure.pageIndex === (playbackState.loopRange.startNotePageIndex ?? gMeasure.pageIndex)) {
+          cursorX = playbackState.loopRange.startNoteX;
+        }
+
         const topY = gMeasure.topY;
         const bottomY = gMeasure.bottomY;
 
@@ -298,7 +306,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     return () => clearTimeout(timer);
   }, [renderScore]);
 
-  // Helper: Find closest individual musical note to click coordinates
+  // Helper: Find closest individual musical note to click coordinates (Measure-scoped matching)
   const findClosestGraphicNote = useCallback((clickX: number, clickY: number, pageIndex: number) => {
     const osmd = osmdRef.current;
     if (!osmd?.GraphicSheet?.MusicPages) return null;
@@ -306,18 +314,13 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     const page = osmd.GraphicSheet.MusicPages[pageIndex];
     if (!page) return null;
 
-    let closestNote: {
-      x: number;
-      topY: number;
-      bottomY: number;
-      pageIndex: number;
-      measureNum: number;
-      timeInBeats: number;
-      durationInBeats: number;
-    } | null = null;
-    let minDistance = Infinity;
-
     const scheduled = audioPlaybackService.getScheduledNotes();
+
+    // Step 1: Find the exact measure containing the click coordinates
+    let matchedMeasure: any = null;
+    let matchedMeasureNum = 1;
+    let matchedMeasureIndex = 0;
+    let minMeasureDist = Infinity;
 
     for (const system of page.MusicSystems || []) {
       for (const staffLine of system.StaffLines || []) {
@@ -326,43 +329,86 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
           const mPos = m.PositionAndShape;
           if (!mPos) continue;
 
-          const measureNum = m.MeasureNumber || (mIdx + 1);
-          const measureIndex = measureNum > 0 ? measureNum - 1 : mIdx;
-          const measureTopY = (mPos.AbsolutePosition.y + mPos.BorderTop) * 10;
-          const measureBottomY = (mPos.AbsolutePosition.y + mPos.BorderBottom) * 10;
+          const num = m.MeasureNumber || (mIdx + 1);
+          const mIdxCalc = num > 0 ? num - 1 : mIdx;
+          const x0 = mPos.AbsolutePosition.x * 10;
+          const x1 = (mPos.AbsolutePosition.x + mPos.Size.width) * 10;
+          const y0 = (mPos.AbsolutePosition.y + mPos.BorderTop) * 10 - 25;
+          const y1 = (mPos.AbsolutePosition.y + mPos.BorderBottom) * 10 + 25;
 
-          const notesInMeasure = scheduled.filter(sn => sn.measureIndex === measureIndex);
-          if (notesInMeasure.length === 0) continue;
+          if (clickX >= x0 && clickX <= x1 && clickY >= y0 && clickY <= y1) {
+            matchedMeasure = m;
+            matchedMeasureNum = num;
+            matchedMeasureIndex = mIdxCalc;
+            minMeasureDist = 0;
+            break;
+          }
 
-          const staffEntries = m.staffEntries || [];
-
-          for (let seIdx = 0; seIdx < staffEntries.length; seIdx++) {
-            const staffEntry = staffEntries[seIdx];
-            const sePos = staffEntry.PositionAndShape;
-            const entryX = sePos.AbsolutePosition.x * 10;
-            const entryY = sePos.AbsolutePosition.y * 10;
-
-            const noteObj = notesInMeasure[Math.min(seIdx, notesInMeasure.length - 1)] || notesInMeasure[0];
-
-            const dist = Math.hypot(clickX - entryX, (clickY - entryY) * 1.5);
-            if (dist < minDistance) {
-              minDistance = dist;
-              closestNote = {
-                x: entryX,
-                topY: measureTopY,
-                bottomY: measureBottomY,
-                pageIndex,
-                measureNum,
-                timeInBeats: noteObj.timeInBeats,
-                durationInBeats: noteObj.durationInBeats,
-              };
-            }
+          const centerX = (x0 + x1) / 2;
+          const centerY = (y0 + y1) / 2;
+          const dist = Math.hypot(clickX - centerX, (clickY - centerY) * 1.8);
+          if (dist < minMeasureDist) {
+            minMeasureDist = dist;
+            matchedMeasure = m;
+            matchedMeasureNum = num;
+            matchedMeasureIndex = mIdxCalc;
           }
         }
+        if (minMeasureDist === 0) break;
       }
+      if (minMeasureDist === 0) break;
     }
 
-    return closestNote;
+    if (!matchedMeasure) return null;
+
+    const mPos = matchedMeasure.PositionAndShape;
+    const measureTopY = (mPos.AbsolutePosition.y + mPos.BorderTop) * 10;
+    const measureBottomY = (mPos.AbsolutePosition.y + mPos.BorderBottom) * 10;
+    const notesInMeasure = scheduled.filter(sn => sn.measureIndex === matchedMeasureIndex);
+
+    // Step 2: Inside the matched measure, find the closest staff entry / notehead
+    const staffEntries = matchedMeasure.staffEntries || [];
+    if (staffEntries.length > 0 && notesInMeasure.length > 0) {
+      let closestEntryX = staffEntries[0].PositionAndShape.AbsolutePosition.x * 10;
+      let closestNoteObj = notesInMeasure[0];
+      let minXDist = Infinity;
+
+      for (let seIdx = 0; seIdx < staffEntries.length; seIdx++) {
+        const se = staffEntries[seIdx];
+        const entryX = se.PositionAndShape.AbsolutePosition.x * 10;
+        const noteObj = notesInMeasure[Math.min(seIdx, notesInMeasure.length - 1)] || notesInMeasure[0];
+        const xDist = Math.abs(clickX - entryX);
+
+        if (xDist < minXDist) {
+          minXDist = xDist;
+          closestEntryX = entryX;
+          closestNoteObj = noteObj;
+        }
+      }
+
+      return {
+        x: closestEntryX,
+        topY: measureTopY,
+        bottomY: measureBottomY,
+        pageIndex,
+        measureNum: matchedMeasureNum,
+        timeInBeats: closestNoteObj.timeInBeats,
+        durationInBeats: closestNoteObj.durationInBeats,
+      };
+    }
+
+    // Fallback: measure start position
+    const measureRange = audioPlaybackService.getMeasureBeatRange(matchedMeasureIndex) || { startBeat: 0, endBeat: 4 };
+
+    return {
+      x: mPos.AbsolutePosition.x * 10,
+      topY: measureTopY,
+      bottomY: measureBottomY,
+      pageIndex,
+      measureNum: matchedMeasureNum,
+      timeInBeats: measureRange.startBeat,
+      durationInBeats: measureRange.endBeat - measureRange.startBeat,
+    };
   }, []);
 
   // Render on-score [IN] and [OUT] cue badges directly in SVG above selected notes
@@ -380,8 +426,32 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     const loopRange = playbackState.loopRange;
     if (!loopRange) return;
 
-    // Render IN Cue (Triangle pointing forward / right)
-    if (loopRange.startMeasure !== undefined && loopRange.startMeasure >= 0) {
+    // Render IN Cue (Triangle pointing forward / right above selected note)
+    if (loopRange.startNoteX !== undefined && loopRange.startNotePageIndex !== undefined) {
+      const svg = svgs[loopRange.startNotePageIndex];
+      if (svg) {
+        const inGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        inGroup.setAttribute('class', 'scoretone-cue-badge');
+        inGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
+        inGroup.onclick = (e) => {
+          e.stopPropagation();
+          audioPlaybackService.clearLoop();
+        };
+
+        const x = loopRange.startNoteX;
+        const topY = loopRange.startNoteTopY ?? 40;
+
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${x},${topY - 18} ${x + 16},${topY - 9} ${x},${topY}`);
+        arrow.setAttribute('fill', '#ea580c');
+        arrow.setAttribute('stroke', '#ffffff');
+        arrow.setAttribute('stroke-width', '1.5');
+        arrow.setAttribute('stroke-linejoin', 'round');
+
+        inGroup.appendChild(arrow);
+        svg.appendChild(inGroup);
+      }
+    } else if (loopRange.startMeasure !== undefined && loopRange.startMeasure >= 0) {
       const gMeasure = getGraphicMeasure(loopRange.startMeasure);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
@@ -411,8 +481,32 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       }
     }
 
-    // Render OUT Cue (Triangle pointing backward / left)
-    if (loopRange.endMeasure !== undefined && loopRange.endMeasure >= 0 && (loopRange.endMeasure !== loopRange.startMeasure || loopRange.endBeat !== loopRange.startBeat)) {
+    // Render OUT Cue (Triangle pointing backward / left above selected note)
+    if (loopRange.endNoteX !== undefined && loopRange.endNotePageIndex !== undefined) {
+      const svg = svgs[loopRange.endNotePageIndex];
+      if (svg) {
+        const outGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        outGroup.setAttribute('class', 'scoretone-cue-badge');
+        outGroup.setAttribute('style', 'cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));');
+        outGroup.onclick = (e) => {
+          e.stopPropagation();
+          audioPlaybackService.clearLoop();
+        };
+
+        const xEnd = loopRange.endNoteX;
+        const topY = loopRange.endNoteTopY ?? 40;
+
+        const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        arrow.setAttribute('points', `${xEnd},${topY - 18} ${xEnd - 16},${topY - 9} ${xEnd},${topY}`);
+        arrow.setAttribute('fill', '#ea580c');
+        arrow.setAttribute('stroke', '#ffffff');
+        arrow.setAttribute('stroke-width', '1.5');
+        arrow.setAttribute('stroke-linejoin', 'round');
+
+        outGroup.appendChild(arrow);
+        svg.appendChild(outGroup);
+      }
+    } else if (loopRange.endMeasure !== undefined && loopRange.endMeasure >= 0 && (loopRange.endMeasure !== loopRange.startMeasure || loopRange.endBeat !== loopRange.startBeat)) {
       const gMeasure = getGraphicMeasure(loopRange.endMeasure);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const svg = svgs[gMeasure.pageIndex];
@@ -480,10 +574,21 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       const minM = startBeat <= endBeat ? startM : endM;
       const maxM = startBeat <= endBeat ? endM : startM;
 
-      audioPlaybackService.setLoop(minBeat, maxBeat, minM, maxM);
+      audioPlaybackService.setLoop(minBeat, maxBeat, minM, maxM, {
+        startNoteX: playbackState.loopRange.startNoteX ?? note.x,
+        startNoteTopY: playbackState.loopRange.startNoteTopY ?? note.topY,
+        startNotePageIndex: playbackState.loopRange.startNotePageIndex ?? pageIndex,
+        endNoteX: note.x,
+        endNoteTopY: note.topY,
+        endNotePageIndex: pageIndex,
+      });
     } else {
       // Normal Click: Set IN point at this note and seek playback
-      audioPlaybackService.setInCue(note.timeInBeats, note.measureNum);
+      audioPlaybackService.setInCue(note.timeInBeats, note.measureNum, {
+        x: note.x,
+        topY: note.topY,
+        pageIndex,
+      });
       audioPlaybackService.seek(note.timeInBeats);
     }
   }, [playbackState.loopRange, findClosestGraphicNote]);
