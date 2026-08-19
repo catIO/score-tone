@@ -129,9 +129,11 @@ class AudioPlaybackService {
     if (this.isCurrentlyPaused) return this.pausedTimeInBeats;
     if (!this.audioContext || this.startTime === 0) return 0;
 
-    const elapsedSeconds = Math.max(0, this.audioContext.currentTime - this.startTime);
+    const elapsedSeconds = this.audioContext.currentTime - this.startTime;
     const beatsPerSec = this.activeBpm / 60;
-    return Math.min(this.totalBeats, elapsedSeconds * beatsPerSec);
+    const calculatedBeat = elapsedSeconds * beatsPerSec;
+    // During count-in, calculatedBeat is < pausedTimeInBeats. Return pausedTimeInBeats so cursor stays on the IN note.
+    return Math.max(this.pausedTimeInBeats, Math.min(this.totalBeats, calculatedBeat));
   }
 
   public setVolume(percent: number): void {
@@ -320,6 +322,8 @@ class AudioPlaybackService {
       startNotePageIndex: noteMeta?.pageIndex,
     };
     this.loopEnabled = false;
+    this.pausedTimeInBeats = startBeat;
+    this.isCurrentlyPaused = true;
     this.notifyState();
   }
 
@@ -426,7 +430,9 @@ class AudioPlaybackService {
     }
 
     const secondsPerBeat = 60 / this.activeBpm;
-    const countInBeats = (!wasPaused && this.enableCountIn && !isLoopActive) ? this.beatsPerBar : 0;
+    const countInBeats = isLoopActive
+      ? Math.max(1, Math.round(this.beatsPerBar / 2))
+      : ((!wasPaused && this.enableCountIn) ? this.beatsPerBar : 0);
     const countInDuration = countInBeats * secondsPerBeat;
     const now = ctx.currentTime;
 
@@ -442,6 +448,12 @@ class AudioPlaybackService {
     // Schedule Count-in clicks
     if (countInBeats > 0) {
       this.notifyState(true);
+      setTimeout(() => {
+        if (this.isCurrentlyPlaying) {
+          this.notifyState(false);
+        }
+      }, countInDuration * 1000);
+
       for (let i = 0; i < countInBeats; i++) {
         const clickTime = now + (i * secondsPerBeat);
         const osc = ctx.createOscillator();
@@ -467,7 +479,7 @@ class AudioPlaybackService {
     const loopEnd = (isLoopActive && this.loopRange) ? this.loopRange.endBeat : this.totalBeats;
 
     this.scheduledNotes.forEach(event => {
-      if (event.timeInBeats + event.durationInBeats <= this.pausedTimeInBeats) {
+      if (event.timeInBeats + event.durationInBeats <= this.pausedTimeInBeats + 1e-4) {
         return;
       }
       if (event.timeInBeats >= loopEnd) {
@@ -520,7 +532,7 @@ class AudioPlaybackService {
       }
     });
 
-    // Start cursor tracking interval
+    // Start cursor tracking interval (50ms interval is light on CPU while noteListeners sync)
     if (this.cursorInterval) clearInterval(this.cursorInterval);
     let lastNotifiedIndex = -1;
 
@@ -545,7 +557,7 @@ class AudioPlaybackService {
           break;
         }
       }
-    }, 20);
+    }, 50);
 
     // Timeout fallback when piece or loop completes
     const remainingBeats = Math.max(0, loopEnd - this.pausedTimeInBeats);
@@ -567,20 +579,13 @@ class AudioPlaybackService {
     if (!this.loopEnabled || !this.loopRange) return;
     this.stopInternal(false);
     this.isCurrentlyPlaying = false;
-    this.isCurrentlyPaused = true;
+    this.isCurrentlyPaused = false;
     this.pausedTimeInBeats = this.loopRange.startBeat;
 
-    this.notifyState();
-
-    // 3-second practice pause before beginning next cycle from the IN point
-    this.loopPauseTimeout = setTimeout(() => {
-      this.loopPauseTimeout = null;
-      if (!this.loopEnabled || !this.loopRange) return;
-      this.isCurrentlyPaused = false;
-      this.play(this.activeBpm).catch(err => {
-        console.warn('Error looping playback:', err);
-      });
-    }, 3000);
+    // Immediately trigger loop playback with half-measure count-in
+    this.play(this.activeBpm).catch(err => {
+      console.warn('Error looping playback:', err);
+    });
   }
 
   public pause(): void {
@@ -660,13 +665,21 @@ class AudioPlaybackService {
     this.activeNodes = [];
     this.masterGain = null;
 
-    if (resetContext && this.audioContext) {
-      try {
-        this.audioContext.close();
-      } catch {
-        // ignore
+    if (this.audioContext) {
+      if (resetContext) {
+        try {
+          this.audioContext.close();
+        } catch {
+          // ignore
+        }
+        this.audioContext = null;
+      } else if (this.audioContext.state === 'running') {
+        try {
+          this.audioContext.suspend();
+        } catch {
+          // ignore
+        }
       }
-      this.audioContext = null;
     }
   }
 

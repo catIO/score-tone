@@ -88,7 +88,19 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     const unsubscribe = audioPlaybackService.subscribeState((newState) => {
       setPlaybackState(newState);
     });
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        if (audioPlaybackService.isPlaying()) {
+          audioPlaybackService.pause();
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       unsubscribe();
       audioPlaybackService.stop();
     };

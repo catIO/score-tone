@@ -156,9 +156,32 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
   }, [zoom, loading]);
 
-  // Real-time Visual Playback Tracking Line & Auto-Scroll (60 FPS)
+  // Real-time Visual Playback Tracking Line & Auto-Scroll (GPU-efficient DOM reuse)
   useEffect(() => {
     let animId: number;
+    let lastCheckedMeasure = -1;
+
+    const getOrCreateCursor = (svg: SVGSVGElement): { group: SVGGElement; line: SVGLineElement } => {
+      let group = svg.querySelector('.scoretone-playback-cursor') as SVGGElement | null;
+      let line: SVGLineElement | null = null;
+      if (!group) {
+        group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        group.setAttribute('class', 'scoretone-playback-cursor');
+        group.setAttribute('style', 'pointer-events: none;');
+
+        line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('stroke', '#ea580c');
+        line.setAttribute('stroke-width', '2.5');
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('style', 'filter: drop-shadow(0 0 5px rgba(234, 88, 12, 0.85));');
+
+        group.appendChild(line);
+        svg.appendChild(group);
+      } else {
+        line = group.querySelector('line') as SVGLineElement;
+      }
+      return { group, line: line! };
+    };
 
     const updatePlaybackCursor = () => {
       const isPlaying = playbackState.isPlaying;
@@ -169,13 +192,11 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         return;
       }
 
-      // Clear previous playback cursor lines across all SVG pages
-      svgs.forEach(s => {
-        const oldLine = s.querySelector('.scoretone-playback-cursor');
-        if (oldLine) oldLine.remove();
-      });
-
       if (!isPlaying && !isPaused && playbackState.currentBeat === 0) {
+        svgs.forEach(s => {
+          const group = s.querySelector('.scoretone-playback-cursor') as HTMLElement | null;
+          if (group) group.style.display = 'none';
+        });
         return;
       }
 
@@ -208,7 +229,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
       const gMeasure = getGraphicMeasure(currentMeasureIndex + 1);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
-        const svg = svgs[gMeasure.pageIndex];
+        const activeSvg = svgs[gMeasure.pageIndex];
         const measureDuration = Math.max(0.001, measureEndBeat - measureStartBeat);
         const progress = Math.max(0, Math.min(1, (currentBeat - measureStartBeat) / measureDuration));
         let cursorX = gMeasure.x + (gMeasure.width * progress);
@@ -223,31 +244,28 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const topY = gMeasure.topY;
         const bottomY = gMeasure.bottomY;
 
-        // Render SVG cursor line
-        const cursorGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        cursorGroup.setAttribute('class', 'scoretone-playback-cursor');
-        cursorGroup.setAttribute('style', 'pointer-events: none;');
+        // Update active page cursor line in place
+        svgs.forEach((s, idx) => {
+          const { group, line } = getOrCreateCursor(s as SVGSVGElement);
+          if (idx === gMeasure.pageIndex) {
+            group.style.display = '';
+            line.setAttribute('x1', `${cursorX}`);
+            line.setAttribute('y1', `${topY - 4}`);
+            line.setAttribute('x2', `${cursorX}`);
+            line.setAttribute('y2', `${bottomY + 4}`);
+          } else {
+            group.style.display = 'none';
+          }
+        });
 
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', `${cursorX}`);
-        line.setAttribute('y1', `${topY - 4}`);
-        line.setAttribute('x2', `${cursorX}`);
-        line.setAttribute('y2', `${bottomY + 4}`);
-        line.setAttribute('stroke', '#ea580c');
-        line.setAttribute('stroke-width', '2.5');
-        line.setAttribute('stroke-linecap', 'round');
-        line.setAttribute('style', 'filter: drop-shadow(0 0 5px rgba(234, 88, 12, 0.85));');
-
-        cursorGroup.appendChild(line);
-        svg.appendChild(cursorGroup);
-
-        // Auto-scroll when the playback line reaches the bottom of what's currently visible
+        // Auto-scroll check on measure transitions or when playing
         const scrollContainer = scrollContainerRef.current;
-        if (scrollContainer && isPlaying) {
-          const pt = svg.createSVGPoint();
+        if (scrollContainer && isPlaying && lastCheckedMeasure !== currentMeasureIndex) {
+          lastCheckedMeasure = currentMeasureIndex;
+          const pt = activeSvg.createSVGPoint();
           pt.x = cursorX;
           pt.y = bottomY;
-          const ctm = svg.getScreenCTM();
+          const ctm = activeSvg.getScreenCTM();
           if (ctm) {
             const screenPt = pt.matrixTransform(ctm);
             const containerRect = scrollContainer.getBoundingClientRect();
@@ -256,7 +274,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
             if (screenPt.y > bottomThreshold || screenPt.y < topThreshold) {
               const idealScreenTop = containerRect.top + 80;
-              const topPt = svg.createSVGPoint();
+              const topPt = activeSvg.createSVGPoint();
               topPt.x = cursorX;
               topPt.y = topY;
               const screenTopPt = topPt.matrixTransform(ctm);
@@ -282,14 +300,6 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     };
   }, [playbackState.isPlaying, playbackState.isPaused, playbackState.currentBeat, getGraphicMeasure]);
 
-  // Handle stop / rewind scroll to top
-  useEffect(() => {
-    return audioPlaybackService.subscribeState((state) => {
-      if (!state.isPlaying && !state.isPaused && state.currentBeat === 0) {
-        scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    });
-  }, []);
 
   // Mount effect
   useEffect(() => {
@@ -365,6 +375,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     const measureTopY = (mPos.AbsolutePosition.y + mPos.BorderTop) * 10;
     const measureBottomY = (mPos.AbsolutePosition.y + mPos.BorderBottom) * 10;
     const notesInMeasure = scheduled.filter(sn => sn.measureIndex === matchedMeasureIndex);
+    const measureRange = audioPlaybackService.getMeasureBeatRange(matchedMeasureIndex) || { startBeat: 0, endBeat: 4 };
 
     // Step 2: Inside the matched measure, find the closest staff entry / notehead
     const staffEntries = matchedMeasure.staffEntries || [];
@@ -376,13 +387,25 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       for (let seIdx = 0; seIdx < staffEntries.length; seIdx++) {
         const se = staffEntries[seIdx];
         const entryX = se.PositionAndShape.AbsolutePosition.x * 10;
-        const noteObj = notesInMeasure[Math.min(seIdx, notesInMeasure.length - 1)] || notesInMeasure[0];
-        const xDist = Math.abs(clickX - entryX);
+        const frac = se.relInMeasureTimestamp;
+        const beatOffset = frac
+          ? ((typeof frac.RealValue === 'number' ? frac.RealValue : (frac.Numerator / frac.Denominator)) * 4)
+          : 0;
+        const targetBeat = measureRange.startBeat + beatOffset;
 
+        // Find the scheduled note corresponding to this staff entry timestamp
+        let matchedNote = notesInMeasure.find(n => Math.abs(n.timeInBeats - targetBeat) < 0.05);
+        if (!matchedNote) {
+          matchedNote = notesInMeasure.reduce((prev, curr) =>
+            Math.abs(curr.timeInBeats - targetBeat) < Math.abs(prev.timeInBeats - targetBeat) ? curr : prev
+          , notesInMeasure[0]);
+        }
+
+        const xDist = Math.abs(clickX - entryX);
         if (xDist < minXDist) {
           minXDist = xDist;
           closestEntryX = entryX;
-          closestNoteObj = noteObj;
+          closestNoteObj = matchedNote;
         }
       }
 
@@ -397,8 +420,29 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       };
     }
 
-    // Fallback: measure start position
-    const measureRange = audioPlaybackService.getMeasureBeatRange(matchedMeasureIndex) || { startBeat: 0, endBeat: 4 };
+    // Fallback: estimate note from click position within measure
+    if (notesInMeasure.length > 0) {
+      const measureDuration = Math.max(0.001, measureRange.endBeat - measureRange.startBeat);
+      const relativeClickX = Math.max(0, Math.min(1, (clickX - (mPos.AbsolutePosition.x * 10)) / (mPos.Size.width * 10)));
+      const estimatedBeat = measureRange.startBeat + (relativeClickX * measureDuration);
+
+      const closestNoteObj = notesInMeasure.reduce((prev, curr) =>
+        Math.abs(curr.timeInBeats - estimatedBeat) < Math.abs(prev.timeInBeats - estimatedBeat) ? curr : prev
+      , notesInMeasure[0]);
+
+      const noteProgress = (closestNoteObj.timeInBeats - measureRange.startBeat) / measureDuration;
+      const noteX = (mPos.AbsolutePosition.x * 10) + (mPos.Size.width * 10 * noteProgress);
+
+      return {
+        x: noteX,
+        topY: measureTopY,
+        bottomY: measureBottomY,
+        pageIndex,
+        measureNum: matchedMeasureNum,
+        timeInBeats: closestNoteObj.timeInBeats,
+        durationInBeats: closestNoteObj.durationInBeats,
+      };
+    }
 
     return {
       x: mPos.AbsolutePosition.x * 10,
