@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'masked-icon.svg', 'icons/apple-touch-icon.png', 'icons/icon-192x192.png', 'icons/icon-512x512.png', 'icons/icon-mac.png'],
       manifest: {
         name: 'Score Tone',

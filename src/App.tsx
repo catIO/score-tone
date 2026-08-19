@@ -5,6 +5,7 @@ import { settingsService, type AppSettings } from './services/settingsService';
 import { storageService, type ScoreFile } from './services/storageService';
 import { googleDriveService } from './services/googleDriveService';
 import { Loader2, AlertCircle } from 'lucide-react';
+import UpdatePrompt from './components/UpdatePrompt';
 
 export const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'library' | 'viewer'>('library');
@@ -359,6 +360,8 @@ export const App: React.FC = () => {
           />
         )
       )}
+
+      <UpdatePrompt />
     </div>
   );
 };
