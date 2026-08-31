@@ -125,9 +125,11 @@ class AudioPlaybackService {
   }
 
   public getCurrentBeat(): number {
-    if (!this.isCurrentlyPlaying && !this.isCurrentlyPaused) return 0;
+    if (!this.isCurrentlyPlaying && !this.isCurrentlyPaused) {
+      return this.pausedTimeInBeats;
+    }
     if (this.isCurrentlyPaused) return this.pausedTimeInBeats;
-    if (!this.audioContext || this.startTime === 0) return 0;
+    if (!this.audioContext || this.startTime === 0) return this.pausedTimeInBeats;
 
     const elapsedSeconds = this.audioContext.currentTime - this.startTime;
     const beatsPerSec = this.activeBpm / 60;
@@ -431,7 +433,7 @@ class AudioPlaybackService {
 
     const secondsPerBeat = 60 / this.activeBpm;
     const countInBeats = isLoopActive
-      ? Math.max(1, Math.round(this.beatsPerBar / 2))
+      ? this.beatsPerBar
       : ((!wasPaused && this.enableCountIn) ? this.beatsPerBar : 0);
     const countInDuration = countInBeats * secondsPerBeat;
     const now = ctx.currentTime;
@@ -572,7 +574,7 @@ class AudioPlaybackService {
       }
     }, Math.max(0, totalPlaybackDurationSec * 1000));
 
-    this.notifyState();
+    this.notifyState(countInBeats > 0);
   }
 
   private restartLoopCycle(): void {
@@ -582,7 +584,7 @@ class AudioPlaybackService {
     this.isCurrentlyPaused = false;
     this.pausedTimeInBeats = this.loopRange.startBeat;
 
-    // Immediately trigger loop playback with half-measure count-in
+    // Immediately trigger loop playback with whole-measure count-in
     this.play(this.activeBpm).catch(err => {
       console.warn('Error looping playback:', err);
     });
@@ -673,12 +675,6 @@ class AudioPlaybackService {
           // ignore
         }
         this.audioContext = null;
-      } else if (this.audioContext.state === 'running') {
-        try {
-          this.audioContext.suspend();
-        } catch {
-          // ignore
-        }
       }
     }
   }

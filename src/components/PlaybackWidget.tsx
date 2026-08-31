@@ -103,14 +103,6 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
         <Repeat className="w-4 h-4" />
       </button>
 
-      {/* Count-In Pulse Badge (visible during count-in) */}
-      {playbackState.countInActive && (
-        <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-400 px-2 py-0.5 rounded-full bg-amber-500/20 animate-pulse">
-          <Clock className="w-3 h-3" />
-          <span>Count In</span>
-        </span>
-      )}
-
       {/* BPM & Settings Popover Trigger */}
       <button
         onClick={() => setIsOpen(!isOpen)}
