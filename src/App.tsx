@@ -201,25 +201,33 @@ export const App: React.FC = () => {
     settingsService.saveSettings(newSettings);
   };
 
-  const handleOpenFile = (file: ScoreFile, blob?: Blob, page?: number) => {
+  const handleOpenFile = (file: ScoreFile, blob?: Blob, page?: number, queryParams?: Record<string, string>) => {
     const fileToOpen = page ? { ...file, lastPage: page } : file;
     setActiveFile(fileToOpen);
     setInMemoryBlob(blob);
     setActivePage('viewer');
 
-    // Update URL to reflect the current view, including page if specified
-    const params = new URLSearchParams(window.location.search);
+    // Update URL to reflect the current view, including page and loop parameters if specified
     const pageToWrite = page ?? file.lastPage;
-    const newUrl = pageToWrite && pageToWrite > 1
-      ? `?view=${file.id}&page=${pageToWrite}`
-      : `?view=${file.id}`;
-    if (params.get('view') !== file.id || params.get('page') !== String(pageToWrite ?? '')) {
-      window.history.pushState(
-        { page: 'viewer', fileId: file.id, filePage: pageToWrite },
-        '',
-        newUrl
-      );
+    const urlParams = new URLSearchParams();
+    urlParams.set('view', file.id);
+    if (pageToWrite && pageToWrite > 1) {
+      urlParams.set('page', String(pageToWrite));
     }
+    if (queryParams) {
+      Object.entries(queryParams).forEach(([k, v]) => {
+        if (v !== undefined && v !== '') {
+          urlParams.set(k, v);
+        }
+      });
+    }
+
+    const newUrl = `?${urlParams.toString()}`;
+    window.history.pushState(
+      { page: 'viewer', fileId: file.id, filePage: pageToWrite },
+      '',
+      newUrl
+    );
   };
 
   const handleFileMetadataUpdated = (updatedFile: ScoreFile) => {

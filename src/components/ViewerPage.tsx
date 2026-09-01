@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
-import type { ScoreFile } from '../services/storageService';
+import type { ScoreFile, Bookmark } from '../services/storageService';
 import { storageService, isMusicXmlFile } from '../services/storageService';
 import type { AppSettings, FilterSettings } from '../services/settingsService';
 import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
 import { readMusicXmlText } from '../services/musicXmlService';
-import { audioPlaybackService, type PlaybackState } from '../services/audioPlaybackService';
+import { audioPlaybackService, type PlaybackState, type LoopRange } from '../services/audioPlaybackService';
 import ViewerToolbar from './ViewerToolbar';
 import PdfViewer from './PdfViewer';
 import MusicXmlViewer from './MusicXmlViewer';
@@ -152,6 +152,27 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             } else if (bpm) {
               audioPlaybackService.setTempo(bpm);
             }
+
+            // Check if URL contains loop parameters (deep link or library practice shortcut)
+            const urlParams = new URLSearchParams(window.location.search);
+            const loopStartBeat = urlParams.get('loopStartBeat');
+            const loopEndBeat = urlParams.get('loopEndBeat');
+            if (loopStartBeat && loopEndBeat) {
+              const startBeat = parseFloat(loopStartBeat);
+              const endBeat = parseFloat(loopEndBeat);
+              const startM = urlParams.get('loopStartM') ? parseInt(urlParams.get('loopStartM')!, 10) : undefined;
+              const endM = urlParams.get('loopEndM') ? parseInt(urlParams.get('loopEndM')!, 10) : undefined;
+              const targetBpm = urlParams.get('bpm') ? parseInt(urlParams.get('bpm')!, 10) : undefined;
+              if (!isNaN(startBeat) && !isNaN(endBeat) && startBeat < endBeat) {
+                audioPlaybackService.applyLoopRange({
+                  startBeat,
+                  endBeat,
+                  startMeasure: startM,
+                  endMeasure: endM,
+                }, targetBpm);
+              }
+            }
+
             setLoading(false);
           }
         } else {
@@ -327,6 +348,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           handleToggleLoop();
           return;
         }
+        if (e.key === 'b' || e.key === 'B') {
+          e.preventDefault();
+          setIsBookmarksOpen(prev => !prev);
+          return;
+        }
         if (e.key === 'Escape' || e.key === 'c' || e.key === 'C') {
           e.preventDefault();
           handleClearLoop();
@@ -475,11 +501,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const handleAddBookmark = async (name: string, page: number) => {
     const existing = file.bookmarks || [];
-    const newBookmark = {
+    const newBookmark: Bookmark = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name,
       page,
       createdAt: Date.now(),
+      type: 'page',
     };
     const updatedFile = {
       ...file,
@@ -491,6 +518,40 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     } catch (err) {
       console.warn('Failed to add bookmark', err);
     }
+  };
+
+  const handleAddLoopBookmark = async (name: string, loopRange: LoopRange, bpm?: number) => {
+    const existing = file.bookmarks || [];
+    const targetPage = loopRange.startNotePageIndex !== undefined
+      ? loopRange.startNotePageIndex + 1
+      : currentPage;
+    const newBookmark: Bookmark = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      page: targetPage,
+      createdAt: Date.now(),
+      type: 'loop',
+      loopRange: { ...loopRange },
+      bpm: bpm || playbackState.bpm,
+    };
+    const updatedFile = {
+      ...file,
+      bookmarks: [...existing, newBookmark],
+    };
+    try {
+      await storageService.saveFileMetadata(updatedFile);
+      onFileMetadataUpdated?.(updatedFile);
+    } catch (err) {
+      console.warn('Failed to add loop bookmark', err);
+    }
+  };
+
+  const handleSelectLoopBookmark = (bm: Bookmark) => {
+    if (!bm.loopRange) return;
+    if (bm.page && bm.page !== currentPage) {
+      handlePageChange(bm.page);
+    }
+    audioPlaybackService.applyLoopRange(bm.loopRange, bm.bpm);
   };
 
   const handleDeleteBookmark = async (id: string) => {
@@ -706,6 +767,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           onClose={() => setIsSettingsOpen(false)}
           wakeLockActive={wakeLock.isActive}
           wakeLockSupported={wakeLock.isSupported}
+          isMusicXml={isMusicXml}
         />
       </div>
 
@@ -729,8 +791,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           currentPage={currentPage}
           onPageChange={handlePageChange}
           onAddBookmark={handleAddBookmark}
+          onAddLoopBookmark={handleAddLoopBookmark}
+          onSelectLoopBookmark={handleSelectLoopBookmark}
           onDeleteBookmark={handleDeleteBookmark}
           onClose={() => setIsBookmarksOpen(false)}
+          playbackState={playbackState}
+          isMusicXml={isMusicXml}
         />
       </div>
 

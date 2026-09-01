@@ -7,6 +7,7 @@ interface SettingsPanelProps {
   onClose: () => void;
   wakeLockActive: boolean;
   wakeLockSupported: boolean;
+  isMusicXml?: boolean;
 }
 
 const Toggle: React.FC<{ checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }> = ({ checked, onChange, disabled }) => (
@@ -79,7 +80,7 @@ const Row: React.FC<{ label: string; description?: string; children: React.React
   </div>
 );
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, onClose, wakeLockActive, wakeLockSupported }) => {
+export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange, onClose, wakeLockActive, wakeLockSupported, isMusicXml = false }) => {
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     onChange({ ...settings, [key]: value });
 
@@ -105,29 +106,34 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
         <button onClick={onClose} className="md-btn-text" style={{ padding: '4px 10px', fontSize: 12 }}>Close</button>
       </div>
 
-      {/* Page Layout */}
-      <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-        Page Layout
-      </p>
-      <div style={{ marginBottom: 16 }}>
-        <SegmentedControl
-          options={[{ value: 'single', label: 'Single' }, { value: 'continuous', label: 'Scroll' }]}
-          value={settings.scrollMode}
-          onChange={v => set('scrollMode', v as AppSettings['scrollMode'])}
-        />
-      </div>
+      {/* Page Layout & Fit Mode (PDF only) */}
+      {!isMusicXml && (
+        <>
+          {/* Page Layout */}
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+            Page Layout
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            <SegmentedControl
+              options={[{ value: 'single', label: 'Single' }, { value: 'continuous', label: 'Scroll' }]}
+              value={settings.scrollMode}
+              onChange={v => set('scrollMode', v as AppSettings['scrollMode'])}
+            />
+          </div>
 
-      {/* Fit Mode */}
-      <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-        Fit Mode
-      </p>
-      <div style={{ marginBottom: 16 }}>
-        <SegmentedControl
-          options={[{ value: 'width', label: 'Fit Width' }, { value: 'height', label: 'Fit Height' }]}
-          value={settings.fitMode}
-          onChange={v => set('fitMode', v as AppSettings['fitMode'])}
-        />
-      </div>
+          {/* Fit Mode */}
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+            Fit Mode
+          </p>
+          <div style={{ marginBottom: 16 }}>
+            <SegmentedControl
+              options={[{ value: 'width', label: 'Fit Width' }, { value: 'height', label: 'Fit Height' }]}
+              value={settings.fitMode}
+              onChange={v => set('fitMode', v as AppSettings['fitMode'])}
+            />
+          </div>
+        </>
+      )}
 
       {/* Toggles */}
       <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
@@ -136,27 +142,31 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
       <Row label="Auto-Hide Menu" description="Hide toolbar until top edge is hovered or tapped">
         <Toggle checked={settings.autoHideControls} onChange={v => set('autoHideControls', v)} />
       </Row>
-      <Row label="Two-Page Landscape" description="Side-by-side pages in landscape">
-        <Toggle checked={settings.twoPageLandscape} onChange={v => set('twoPageLandscape', v)} />
-      </Row>
+      {!isMusicXml && (
+        <Row label="Two-Page Landscape" description="Side-by-side pages in landscape">
+          <Toggle checked={settings.twoPageLandscape} onChange={v => set('twoPageLandscape', v)} />
+        </Row>
+      )}
 
-      {/* Tap Zone */}
-      <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--md-surface-3)', marginBottom: 8 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)' }}>Tap Zone Width</p>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-primary)' }}>{settings.tapZoneWidth}%</span>
+      {/* Tap Zone (PDF page turns only) */}
+      {!isMusicXml && (
+        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'var(--md-surface-3)', marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)' }}>Tap Zone Width</p>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-primary)' }}>{settings.tapZoneWidth}%</span>
+          </div>
+          <p style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', marginBottom: 10 }}>
+            Edge area reserved for page turns
+          </p>
+          <input
+            type="range" min="10" max="40" step="5"
+            value={settings.tapZoneWidth}
+            onChange={e => set('tapZoneWidth', parseInt(e.target.value))}
+            className="custom-slider"
+            style={{ width: '100%' }}
+          />
         </div>
-        <p style={{ fontSize: 11, color: 'var(--md-on-surface-variant)', marginBottom: 10 }}>
-          Edge area reserved for page turns
-        </p>
-        <input
-          type="range" min="10" max="40" step="5"
-          value={settings.tapZoneWidth}
-          onChange={e => set('tapZoneWidth', parseInt(e.target.value))}
-          className="custom-slider"
-          style={{ width: '100%' }}
-        />
-      </div>
+      )}
 
       {/* Performance */}
       <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, marginTop: 8 }}>

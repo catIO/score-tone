@@ -1,10 +1,14 @@
 import Dexie, { type Table } from 'dexie';
+import type { LoopRange } from './audioPlaybackService';
 
 export interface Bookmark {
   id: string;
   name: string;
   page: number;
   createdAt: number;
+  type?: 'page' | 'loop';
+  loopRange?: LoopRange;
+  bpm?: number;
 }
 
 export type FileFormat = 'pdf' | 'musicxml';

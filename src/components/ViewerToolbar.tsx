@@ -127,18 +127,21 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
         </button>
         <div className="flex items-center gap-2 min-w-0 ml-1">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>{file.name}</p>
-          {file.offline ? (
-            <span className="md-chip md-chip-success text-[10px] py-0.5 px-2 flex items-center gap-0.5 flex-shrink-0">
-              <span className="material-symbols-outlined text-[12px] leading-none">check</span> Offline
-            </span>
-          ) : (
-            <button
-              onClick={onSaveOffline}
-              className="flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex-shrink-0"
-              style={{ background: 'var(--md-primary-container)', color: 'var(--md-on-primary-container)' }}
-            >
-              <span className="material-symbols-outlined text-[12px] leading-none">save</span> Save Offline
-            </button>
+          {file.source === 'google-drive' && (
+            file.offline ? (
+              <span className="md-chip md-chip-success text-[10px] py-0.5 px-2 flex items-center gap-0.5 flex-shrink-0" title="Saved locally — available offline">
+                <span className="material-symbols-outlined text-[12px] leading-none">check</span> Saved Offline
+              </span>
+            ) : (
+              <button
+                onClick={onSaveOffline}
+                className="flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex-shrink-0"
+                style={{ background: 'var(--md-primary-container)', color: 'var(--md-on-primary-container)' }}
+                title="Save copy for offline access"
+              >
+                <span className="material-symbols-outlined text-[12px] leading-none">save</span> Save Offline
+              </button>
+            )
           )}
         </div>
       </div>

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi, X, Music } from 'lucide-react';
-import { storageService, isMusicXmlFile, type ScoreFile } from '../services/storageService';
+import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi, X, Music, Repeat, Cloud } from 'lucide-react';
+import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
 interface LibraryPageProps {
-  onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number) => void;
+  onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number, queryParams?: Record<string, string>) => void;
 }
 
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
@@ -223,7 +223,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       setLoading(true);
       try {
         if (file.source === 'local') {
-          setErrorMsg('Open the file in the viewer and click "Save for Offline" to cache local files.');
+          setErrorMsg('Open the file in the viewer and click "Save Offline" to cache local files.');
           setLoading(false);
           return;
         }
@@ -232,8 +232,27 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
           setLoading(false);
           return;
         }
-        const token = driveToken || await googleDriveService.getAccessToken();
-        const blob = await googleDriveService.downloadFile(file.id, token);
+        let token = driveToken;
+        if (!token) {
+          try {
+            token = await googleDriveService.getAccessToken({ allowInteractive: false });
+            if (token) setDriveToken(token);
+          } catch {
+            // fall through to attempt download with cached/public strategies
+          }
+        }
+        let blob: Blob;
+        try {
+          blob = await googleDriveService.downloadFile(file.id, token || undefined);
+        } catch (downloadErr: any) {
+          if (isGoogleConfigured && file.source === 'google-drive') {
+            token = await googleDriveService.getAccessToken({ allowInteractive: true });
+            setDriveToken(token);
+            blob = await googleDriveService.downloadFile(file.id, token);
+          } else {
+            throw downloadErr;
+          }
+        }
         await storageService.cacheFileOffline(file, blob);
         await loadFiles();
       } catch (err: any) {
@@ -263,7 +282,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   // Intercept library list clicks for Drive files that aren't offline-cached.
   // We download the blob here (in a user-gesture context) rather than deferring
   // to ViewerPage's useEffect, where browser popup policy blocks the OAuth call.
-  const handleFileClick = async (file: ScoreFile, page?: number) => {
+  const handleFileClick = async (file: ScoreFile, page?: number, queryParams?: Record<string, string>) => {
     if (file.source === 'local' && !file.offline) {
       // Legacy local file without a cached blob — ask user to re-upload it
       setErrorMsg(`"${file.name}" needs to be re-uploaded. Drop the PDF again to reopen it.`);
@@ -278,7 +297,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
           await storageService.saveFileMetadata({ ...file, offline: true });
           await loadFiles();
         }
-        onOpenFile(file, cachedBlob, page);
+        onOpenFile(file, cachedBlob, page, queryParams);
         return;
       }
     } catch {
@@ -303,14 +322,44 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         }
       }
 
-      const blob = await googleDriveService.downloadFile(file.id, token || undefined);
+      let blob: Blob;
+      try {
+        blob = await googleDriveService.downloadFile(file.id, token || undefined);
+      } catch (firstErr: any) {
+        // If downloading failed (e.g. 403 on private file or expired token), retry with interactive auth
+        // since handleFileClick is directly triggered in response to a user click.
+        if (isGoogleConfigured && file.source === 'google-drive') {
+          token = await googleDriveService.getAccessToken({ allowInteractive: true });
+          setDriveToken(token);
+          blob = await googleDriveService.downloadFile(file.id, token);
+        } else {
+          throw firstErr;
+        }
+      }
+
       await storageService.cacheFileOffline(file, blob);
       await loadFiles();
-      onOpenFile(file, blob, page);
+      onOpenFile(file, blob, page, queryParams);
     } catch (err: any) {
       setErrorMsg('Failed to open from Google Drive: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleBookmarkClick = (file: ScoreFile, bm: Bookmark, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (bm.type === 'loop' && bm.loopRange) {
+      const queryParams: Record<string, string> = {
+        loopStartBeat: String(bm.loopRange.startBeat),
+        loopEndBeat: String(bm.loopRange.endBeat),
+        ...(bm.loopRange.startMeasure !== undefined ? { loopStartM: String(bm.loopRange.startMeasure) } : {}),
+        ...(bm.loopRange.endMeasure !== undefined ? { loopEndM: String(bm.loopRange.endMeasure) } : {}),
+        ...(bm.bpm ? { bpm: String(bm.bpm) } : {}),
+      };
+      handleFileClick(file, bm.page, queryParams);
+    } else {
+      handleFileClick(file, bm.page);
     }
   };
 
@@ -510,13 +559,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                   <div
                     key={file.id}
                     onClick={() => handleFileClick(file)}
-                    className="flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer transition-colors group"
+                    className="flex items-start gap-4 px-4 py-3.5 rounded-xl cursor-pointer transition-colors group"
                     style={{ background: 'var(--md-surface-1)' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'var(--md-surface-1)')}
                   >
                     {/* Icon */}
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
                       style={{ background: 'var(--md-surface-3)' }}>
                       {file.source === 'google-drive' ? (
                         <svg width="20" height="20" viewBox="0 0 87.3 78" fill="none">
@@ -553,124 +602,142 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {[...file.bookmarks]
                             .sort((a, b) => a.page - b.page)
-                            .map(bm => (
-                              <button
-                                key={bm.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFileClick(file, bm.page);
-                                }}
-                                className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
-                                style={{
-                                  background: 'rgba(255, 183, 77, 0.12)',
-                                  color: 'var(--md-primary)',
-                                  border: '1px solid rgba(255, 183, 77, 0.2)'
-                                }}
-                                onMouseEnter={e => {
-                                  e.currentTarget.style.background = 'rgba(255, 183, 77, 0.22)';
-                                }}
-                                onMouseLeave={e => {
-                                  e.currentTarget.style.background = 'rgba(255, 183, 77, 0.12)';
-                                }}
-                              >
-                                <span className="material-symbols-outlined text-[10px] leading-none">bookmark</span>
-                                {bm.name} <span className="opacity-60 font-normal">(p.{bm.page})</span>
-                              </button>
-                            ))}
+                            .map(bm => {
+                              const isLoop = bm.type === 'loop';
+                              const loopMeasures = isLoop && bm.loopRange?.startMeasure && bm.loopRange?.endMeasure;
+                              const alreadyHasMeasuresInName = loopMeasures && (bm.name.includes('m.') || bm.name.includes(`${bm.loopRange?.startMeasure}`));
+                              return (
+                                <button
+                                  key={bm.id}
+                                  onClick={(e) => handleBookmarkClick(file, bm, e)}
+                                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                                  style={{
+                                    background: isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)',
+                                    color: isLoop ? '#fb923c' : 'var(--md-primary)',
+                                    border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid rgba(255, 183, 77, 0.2)'
+                                  }}
+                                  onMouseEnter={e => {
+                                    e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.26)' : 'rgba(255, 183, 77, 0.22)';
+                                  }}
+                                  onMouseLeave={e => {
+                                    e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)';
+                                  }}
+                                  title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
+                                >
+                                  {isLoop ? (
+                                    <Repeat className="w-2.5 h-2.5" />
+                                  ) : (
+                                    <span className="material-symbols-outlined text-[10px] leading-none">bookmark</span>
+                                  )}
+                                  {bm.name}
+                                  {loopMeasures && !alreadyHasMeasuresInName ? (
+                                    <span className="opacity-70 font-normal">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
+                                  ) : !isLoop ? (
+                                    <span className="opacity-60 font-normal">(p.{bm.page})</span>
+                                  ) : null}
+                                </button>
+                              );
+                            })}
                         </div>
                       )}
                     </div>
 
-                    {/* Offline chip */}
-                    <div className="flex items-center gap-1">
-                      {file.offline ? (
-                        <span className="md-chip md-chip-success">
-                          <CheckCircle2 className="w-3 h-3" /> Offline
-                        </span>
-                      ) : (
-                        <span className="md-chip md-chip-warning">Online</span>
+                    {/* Right column: Offline / Cloud chip + Actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                      {file.source === 'google-drive' && (
+                        file.offline ? (
+                          <span className="md-chip md-chip-success" title="Saved locally — available offline">
+                            <CheckCircle2 className="w-3 h-3" /> Saved Offline
+                          </span>
+                        ) : (
+                          <span className="md-chip md-chip-warning" title="Stored on Google Drive — requires internet to open">
+                            <Cloud className="w-3 h-3" /> Cloud Only
+                          </span>
+                        )
                       )}
-                    </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {/* Share dropdown */}
-                      <div
-                        ref={el => { if (el) shareMenuRefs.current.set(file.id, el); else shareMenuRefs.current.delete(file.id); }}
-                        style={{ position: 'relative' }}
-                      >
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {/* Share dropdown */}
+                        <div
+                          ref={el => { if (el) shareMenuRefs.current.set(file.id, el); else shareMenuRefs.current.delete(file.id); }}
+                          style={{ position: 'relative' }}
+                        >
+                          <button
+                            onClick={e => { e.stopPropagation(); setOpenShareId(id => id === file.id ? null : file.id); }}
+                            className={`md-icon-btn ${openShareId === file.id ? 'active' : ''}`}
+                            title="Share"
+                            style={{ width: 32, height: 32 }}
+                          >
+                            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                            </svg>
+                          </button>
+
+                          {openShareId === file.id && (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: 'calc(100% + 6px)',
+                                right: 0,
+                                minWidth: 200,
+                                background: 'var(--md-surface-3)',
+                                border: '1px solid var(--md-outline-variant)',
+                                borderRadius: 12,
+                                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                                overflow: 'hidden',
+                                zIndex: 200,
+                              }}
+                            >
+                              <button
+                                onClick={e => handleCopyScoreLink(file, e)}
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
+                                style={{ color: 'var(--md-on-surface)' }}
+                              >
+                                <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+                                  {copiedState?.id === file.id && copiedState.type === 'score' ? 'check' : 'menu_book'}
+                                </span>
+                                {copiedState?.id === file.id && copiedState.type === 'score' ? 'Copied!' : 'Copy link to score'}
+                              </button>
+
+                              <div style={{ height: 1, background: 'var(--md-outline-variant)', margin: '0 12px' }} />
+
+                              <button
+                                onClick={e => handleCopyPageLink(file, e)}
+                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
+                                style={{ color: 'var(--md-on-surface)' }}
+                              >
+                                <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+                                  {copiedState?.id === file.id && copiedState.type === 'page' ? 'check' : 'article'}
+                                </span>
+                                {copiedState?.id === file.id && copiedState.type === 'page'
+                                  ? 'Copied!'
+                                  : `Copy link to page ${file.lastPage}`}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {file.source === 'google-drive' && (
+                          <button
+                            onClick={e => toggleOfflineCache(file, e)}
+                            className="md-icon-btn"
+                            title={file.offline ? 'Remove offline copy (keep in cloud)' : 'Download for offline access'}
+                            style={{ width: 32, height: 32 }}
+                          >
+                            {file.offline ? <CloudOff className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                          </button>
+                        )}
                         <button
-                          onClick={e => { e.stopPropagation(); setOpenShareId(id => id === file.id ? null : file.id); }}
-                          className={`md-icon-btn ${openShareId === file.id ? 'active' : ''}`}
-                          title="Share"
+                          onClick={e => deleteFileRecord(file.id, e)}
+                          className="md-icon-btn"
+                          title="Remove from library"
                           style={{ width: 32, height: 32 }}
                         >
-                          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                          </svg>
+                          <Trash2 className="w-4 h-4" />
                         </button>
-
-                        {openShareId === file.id && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: 'calc(100% + 6px)',
-                              right: 0,
-                              minWidth: 200,
-                              background: 'var(--md-surface-3)',
-                              border: '1px solid var(--md-outline-variant)',
-                              borderRadius: 12,
-                              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                              overflow: 'hidden',
-                              zIndex: 200,
-                            }}
-                          >
-                            <button
-                              onClick={e => handleCopyScoreLink(file, e)}
-                              className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
-                              style={{ color: 'var(--md-on-surface)' }}
-                            >
-                              <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
-                                {copiedState?.id === file.id && copiedState.type === 'score' ? 'check' : 'menu_book'}
-                              </span>
-                              {copiedState?.id === file.id && copiedState.type === 'score' ? 'Copied!' : 'Copy link to score'}
-                            </button>
-
-                            <div style={{ height: 1, background: 'var(--md-outline-variant)', margin: '0 12px' }} />
-
-                            <button
-                              onClick={e => handleCopyPageLink(file, e)}
-                              className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
-                              style={{ color: 'var(--md-on-surface)' }}
-                            >
-                              <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
-                                {copiedState?.id === file.id && copiedState.type === 'page' ? 'check' : 'article'}
-                              </span>
-                              {copiedState?.id === file.id && copiedState.type === 'page'
-                                ? 'Copied!'
-                                : `Copy link to page ${file.lastPage}`}
-                            </button>
-                          </div>
-                        )}
                       </div>
-
-                      <button
-                        onClick={e => toggleOfflineCache(file, e)}
-                        className="md-icon-btn"
-                        title={file.offline ? 'Remove offline cache' : 'Save offline'}
-                        style={{ width: 32, height: 32 }}
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={e => deleteFileRecord(file.id, e)}
-                        className="md-icon-btn"
-                        title="Remove from library"
-                        style={{ width: 32, height: 32 }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
                     </div>
                   </div>
                 ))}

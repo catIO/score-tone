@@ -382,6 +382,15 @@ class AudioPlaybackService {
     this.notifyState();
   }
 
+  public applyLoopRange(range: LoopRange, bpm?: number): void {
+    this.loopRange = { ...range };
+    this.loopEnabled = true;
+    if (bpm && bpm >= 20 && bpm <= 300) {
+      this.activeBpm = bpm;
+    }
+    this.seek(range.startBeat);
+  }
+
   public getLoopRange(): LoopRange | null {
     return this.loopRange;
   }
