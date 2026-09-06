@@ -55,34 +55,39 @@ export const UpdatePrompt: React.FC = () => {
     if (isUpdating) return;
     setIsUpdating(true);
 
+    const forceReload = () => {
+      window.location.reload();
+    };
+
+    // Guaranteed fallback: reload within 600ms regardless of SW lifecycle delays
+    const fallbackTimer = setTimeout(forceReload, 600);
+
     try {
-      // 1. One-time controllerchange listener to immediately reload upon new SW activation
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.addEventListener(
           'controllerchange',
           () => {
-            window.location.reload();
+            clearTimeout(fallbackTimer);
+            forceReload();
           },
           { once: true }
         );
 
-        // 2. Explicitly post SKIP_WAITING to waiting registration if present
-        const registration = await navigator.serviceWorker.getRegistration();
-        if (registration?.waiting) {
-          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        // Tell all waiting service workers across all registrations to activate immediately
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          if (reg.waiting) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
         }
       }
 
-      // 3. Trigger vite-plugin-pwa workbox messageSkipWaiting
       await updateServiceWorker(true);
     } catch (error) {
       console.warn('[ScoreTone] updateServiceWorker error:', error);
+      clearTimeout(fallbackTimer);
+      forceReload();
     }
-
-    // 4. Guaranteed fallback reload: if controllerchange doesn't fire within 800ms, reload anyway
-    setTimeout(() => {
-      window.location.reload();
-    }, 800);
   };
 
   if (!needRefresh) return null;
