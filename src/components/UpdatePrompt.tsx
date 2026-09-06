@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { RefreshCw, Sparkles, X } from 'lucide-react';
 
 export const UpdatePrompt: React.FC = () => {
+  const [isUpdating, setIsUpdating] = useState(false);
+
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -49,6 +51,40 @@ export const UpdatePrompt: React.FC = () => {
     return () => window.removeEventListener('online', handleOnline);
   }, []);
 
+  const handleReloadAndUpdate = async () => {
+    if (isUpdating) return;
+    setIsUpdating(true);
+
+    try {
+      // 1. One-time controllerchange listener to immediately reload upon new SW activation
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener(
+          'controllerchange',
+          () => {
+            window.location.reload();
+          },
+          { once: true }
+        );
+
+        // 2. Explicitly post SKIP_WAITING to waiting registration if present
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration?.waiting) {
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      }
+
+      // 3. Trigger vite-plugin-pwa workbox messageSkipWaiting
+      await updateServiceWorker(true);
+    } catch (error) {
+      console.warn('[ScoreTone] updateServiceWorker error:', error);
+    }
+
+    // 4. Guaranteed fallback reload: if controllerchange doesn't fire within 800ms, reload anyway
+    setTimeout(() => {
+      window.location.reload();
+    }, 800);
+  };
+
   if (!needRefresh) return null;
 
   return (
@@ -70,7 +106,8 @@ export const UpdatePrompt: React.FC = () => {
         </div>
         <button
           onClick={() => setNeedRefresh(false)}
-          className="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 rounded-full transition-colors"
+          disabled={isUpdating}
+          className="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 rounded-full transition-colors disabled:opacity-40"
           aria-label="Dismiss update notification"
         >
           <X className="w-4 h-4" />
@@ -84,21 +121,23 @@ export const UpdatePrompt: React.FC = () => {
       <div className="flex items-center justify-end gap-2 pt-1">
         <button
           onClick={() => setNeedRefresh(false)}
-          className="px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors hover:bg-white/5"
+          disabled={isUpdating}
+          className="px-3 py-1.5 text-xs font-semibold rounded-xl transition-colors hover:bg-white/5 disabled:opacity-40"
           style={{ color: 'var(--md-on-surface-variant, #CEC5B8)' }}
         >
           Later
         </button>
         <button
-          onClick={() => updateServiceWorker(true)}
-          className="px-4 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-md transition-transform active:scale-95"
+          onClick={handleReloadAndUpdate}
+          disabled={isUpdating}
+          className="px-4 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-md transition-transform active:scale-95 disabled:opacity-75"
           style={{
             background: 'var(--md-primary, #FFB74D)',
             color: 'var(--md-on-primary, #3E2000)',
           }}
         >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Reload & Update</span>
+          <RefreshCw className={`w-3.5 h-3.5 ${isUpdating ? 'animate-spin' : ''}`} />
+          <span>{isUpdating ? 'Updating...' : 'Reload & Update'}</span>
         </button>
       </div>
     </aside>
