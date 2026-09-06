@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, Wifi, X, Music, Repeat, Cloud, Info, BookOpen, Sliders, Play, Bookmark as BookmarkIcon } from 'lucide-react';
+import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, X, Music, Repeat, Cloud, Info, BookOpen, Sliders, Play, Bookmark as BookmarkIcon } from 'lucide-react';
 import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';

@@ -23,7 +23,6 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
   currentPage,
   onPageChange,
   onAddBookmark,
-  onAddLoopBookmark,
   onSelectLoopBookmark,
   onDeleteBookmark,
   onClose,
