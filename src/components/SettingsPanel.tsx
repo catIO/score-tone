@@ -197,11 +197,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           </p>
         )}
       </div>
-      <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--md-outline-variant)', textAlign: 'center', fontSize: 11 }}>
-        <a href="/privacy.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--md-primary)', textDecoration: 'underline' }}>
-          Privacy Policy
-        </a>
-      </div>
     </div>
   );
 };

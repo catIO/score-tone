@@ -10,12 +10,12 @@ interface ViewerToolbarProps {
   totalPages: number;
   onPageChange: (page: number) => void;
   onBack: () => void;
-  onToggleDisplay: () => void;
-  onToggleSettings: () => void;
-  onToggleBookmarks: () => void;
-  isDisplayOpen: boolean;
-  isSettingsOpen: boolean;
-  isBookmarksOpen: boolean;
+  onToggleDisplay?: () => void;
+  onToggleSettings?: () => void;
+  onToggleBookmarks?: () => void;
+  isDisplayOpen?: boolean;
+  isSettingsOpen?: boolean;
+  isBookmarksOpen?: boolean;
   onSaveOffline: () => void;
   zoom: number;
   onZoomIn: () => void;
@@ -29,18 +29,20 @@ interface ViewerToolbarProps {
   countInEnabled?: boolean;
   onToggleCountIn?: (enabled: boolean) => void;
   onToggleLoop?: () => void;
+  isCurrentPageBookmarked?: boolean;
+  onToggleCurrentPageBookmark?: () => void;
 }
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   file, currentPage, totalPages,
   onPageChange, onBack,
-  onToggleDisplay, onToggleSettings, onToggleBookmarks,
-  isDisplayOpen, isSettingsOpen, isBookmarksOpen,
   onSaveOffline,
   zoom, onZoomIn, onZoomOut, onZoomReset,
   playbackState, onTogglePlay, onRewind, onBpmChange, onVolumeChange,
   countInEnabled = true, onToggleCountIn,
   onToggleLoop,
+  isCurrentPageBookmarked = false,
+  onToggleCurrentPageBookmark,
 }) => {
   const [jumpPage, setJumpPage] = useState(String(currentPage));
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -119,13 +121,26 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   };
 
   return (
-    <div className="md-top-bar select-none" style={{ paddingLeft: 8, paddingRight: 8 }}>
-      {/* Left: back + title */}
-      <div className="flex items-center gap-1 flex-1 min-w-0 mr-2">
-        <button onClick={onBack} className="md-icon-btn flex-shrink-0" title="Back to library">
-          <span className="material-symbols-outlined text-[22px] leading-none">arrow_back</span>
+    <div className="md-top-bar select-none" style={{ paddingLeft: 12, paddingRight: 12 }}>
+      {/* Left: explicit library back button + score title + offline badge */}
+      <div className="flex items-center gap-2 flex-1 min-w-0 mr-3">
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all hover:bg-white/10 active:scale-95 flex-shrink-0"
+          style={{
+            background: 'var(--md-surface-2)',
+            color: 'var(--md-on-surface)',
+            border: '1px solid var(--md-outline-variant)',
+          }}
+          title="Return to Library"
+        >
+          <span className="material-symbols-outlined text-[18px] leading-none" style={{ color: 'var(--md-primary)' }}>arrow_back</span>
+          <span>Library</span>
         </button>
-        <div className="flex items-center gap-2 min-w-0 ml-1">
+
+        <span className="text-xs select-none" style={{ color: 'var(--md-outline-variant)' }}>/</span>
+
+        <div className="flex items-center gap-2 min-w-0">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>{file.name}</p>
           {file.source === 'google-drive' && (
             file.offline ? (
@@ -146,19 +161,45 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
         </div>
       </div>
 
-      {/* Center: Playback Widget for MusicXML OR Page Navigation for PDF */}
+      {/* Center: Playback Widget (MusicXML) OR Page Navigation + 1-Click Bookmark (PDF) */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {isMusicXmlFile(file) && playbackState && onTogglePlay && onRewind && onBpmChange && onVolumeChange ? (
-          <PlaybackWidget
-            playbackState={playbackState}
-            onTogglePlay={onTogglePlay}
-            onRewind={onRewind}
-            onBpmChange={onBpmChange}
-            onVolumeChange={onVolumeChange}
-            countInEnabled={countInEnabled}
-            onToggleCountIn={onToggleCountIn || (() => {})}
-            onToggleLoop={onToggleLoop}
-          />
+          <div className="flex items-center gap-2">
+            <PlaybackWidget
+              playbackState={playbackState}
+              onTogglePlay={onTogglePlay}
+              onRewind={onRewind}
+              onBpmChange={onBpmChange}
+              onVolumeChange={onVolumeChange}
+              countInEnabled={countInEnabled}
+              onToggleCountIn={onToggleCountIn || (() => {})}
+              onToggleLoop={onToggleLoop}
+            />
+            {onToggleCurrentPageBookmark && (
+              <>
+                <div style={{ width: 1, height: 18, background: 'var(--md-outline-variant)', margin: '0 2px' }} />
+                <button
+                  onClick={onToggleCurrentPageBookmark}
+                  className={`md-icon-btn ${isCurrentPageBookmarked ? 'active' : ''}`}
+                  title={isCurrentPageBookmarked ? `Current measure/page bookmarked (Click to remove)` : `Bookmark current position`}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    color: isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                  }}
+                >
+                  <span
+                    className="material-symbols-outlined text-[20px] leading-none"
+                    style={{
+                      fontVariationSettings: isCurrentPageBookmarked ? "'FILL' 1" : "'FILL' 0",
+                    }}
+                  >
+                    {isCurrentPageBookmarked ? 'bookmark' : 'bookmark_border'}
+                  </span>
+                </button>
+              </>
+            )}
+          </div>
         ) : (
           <div className="flex items-center gap-1">
             <button
@@ -166,6 +207,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
               disabled={currentPage === 1}
               className="md-icon-btn"
               style={{ width: 36, height: 36 }}
+              title="Previous page"
             >
               <span className="material-symbols-outlined text-[22px] leading-none">chevron_left</span>
             </button>
@@ -202,14 +244,40 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
               disabled={currentPage === totalPages}
               className="md-icon-btn"
               style={{ width: 36, height: 36 }}
+              title="Next page"
             >
               <span className="material-symbols-outlined text-[22px] leading-none">chevron_right</span>
             </button>
+
+            {onToggleCurrentPageBookmark && (
+              <>
+                <div style={{ width: 1, height: 18, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
+                <button
+                  onClick={onToggleCurrentPageBookmark}
+                  className={`md-icon-btn ${isCurrentPageBookmarked ? 'active' : ''}`}
+                  title={isCurrentPageBookmarked ? `Page ${currentPage} is bookmarked (Click to remove)` : `Bookmark page ${currentPage}`}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    color: isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                  }}
+                >
+                  <span
+                    className="material-symbols-outlined text-[20px] leading-none"
+                    style={{
+                      fontVariationSettings: isCurrentPageBookmarked ? "'FILL' 1" : "'FILL' 0",
+                    }}
+                  >
+                    {isCurrentPageBookmarked ? 'bookmark' : 'bookmark_border'}
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {/* Right: actions */}
+      {/* Right: Score viewing controls only (Zoom, Share, Fullscreen) */}
       <div className="flex items-center gap-1 flex-shrink-0 ml-2">
         {/* Zoom controls */}
         <button
@@ -248,7 +316,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
           <button
             onClick={() => setShareMenuOpen(o => !o)}
             className={`md-icon-btn ${shareMenuOpen ? 'active' : ''}`}
-            title="Share"
+            title="Share score or page link"
             style={{ width: 36, height: 36 }}
           >
             <span className="material-symbols-outlined text-[20px] leading-none">share</span>
@@ -297,33 +365,6 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
         </div>
 
         <button
-          onClick={onToggleBookmarks}
-          className={`md-icon-btn ${isBookmarksOpen ? 'active' : ''}`}
-          title="Bookmarks"
-          style={{ width: 36, height: 36 }}
-        >
-          <span className="material-symbols-outlined text-[20px] leading-none">bookmark</span>
-        </button>
-
-        <button
-          onClick={onToggleDisplay}
-          className={`md-icon-btn ${isDisplayOpen ? 'active' : ''}`}
-          title="Page color & style"
-          style={{ width: 36, height: 36 }}
-        >
-          <span className="material-symbols-outlined text-[20px] leading-none">palette</span>
-        </button>
-
-        <button
-          onClick={onToggleSettings}
-          className={`md-icon-btn ${isSettingsOpen ? 'active' : ''}`}
-          title="Viewer settings"
-          style={{ width: 36, height: 36 }}
-        >
-          <span className="material-symbols-outlined text-[20px] leading-none">settings</span>
-        </button>
-
-        <button
           onClick={toggleFullscreen}
           className="md-icon-btn"
           title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
@@ -337,4 +378,5 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
     </div>
   );
 };
+
 export default ViewerToolbar;

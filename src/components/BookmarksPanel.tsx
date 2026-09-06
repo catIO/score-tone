@@ -32,31 +32,14 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'loops' | 'pages'>('all');
   const [newPageBookmarkName, setNewPageBookmarkName] = useState('');
-  const [newLoopBookmarkName, setNewLoopBookmarkName] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const hasActiveLoop = !!(playbackState?.loopRange && isMusicXml);
-  const activeLoopRange = playbackState?.loopRange;
-
-  const defaultLoopName = activeLoopRange
-    ? activeLoopRange.startMeasure && activeLoopRange.endMeasure
-      ? `m. ${activeLoopRange.startMeasure}–${activeLoopRange.endMeasure}`
-      : `Loop Beat ${Math.round(activeLoopRange.startBeat)}–${Math.round(activeLoopRange.endBeat)}`
-    : '';
+  const currentPageBookmark = bookmarks.find(bm => bm.page === currentPage && bm.type !== 'loop');
 
   const handleAddPageSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPageBookmarkName.trim()) return;
-    onAddBookmark(newPageBookmarkName.trim(), currentPage);
+    const name = newPageBookmarkName.trim() || `Page ${currentPage}`;
+    onAddBookmark(name, currentPage);
     setNewPageBookmarkName('');
-  };
-
-  const handleAddActiveLoopSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeLoopRange || !onAddLoopBookmark) return;
-    const name = (newLoopBookmarkName.trim() || defaultLoopName || 'Practice Loop');
-    onAddLoopBookmark(name, activeLoopRange, playbackState?.bpm);
-    setNewLoopBookmarkName('');
   };
 
   const handleCopyLink = (bm: Bookmark, e: React.MouseEvent) => {
@@ -122,33 +105,70 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
         <button onClick={onClose} className="md-btn-text" style={{ padding: '4px 10px', fontSize: 12 }}>Close</button>
       </div>
 
-      {/* Save Active Loop Card (if loop is selected) */}
-      {hasActiveLoop && activeLoopRange && onAddLoopBookmark && (
+      {/* Add Page Bookmark / Current Page Status card */}
+      {currentPageBookmark ? (
         <div style={{
-          background: 'linear-gradient(135deg, rgba(234, 88, 12, 0.15), rgba(249, 115, 22, 0.05))',
+          background: 'rgba(255, 183, 77, 0.08)',
           borderRadius: 12,
           padding: '12px 14px',
           marginBottom: 16,
-          border: '1px solid rgba(234, 88, 12, 0.35)',
+          border: '1px solid rgba(255, 183, 77, 0.35)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, marginRight: 8 }}>
+              <BookmarkIcon className="w-4 h-4 text-[var(--md-primary)] flex-shrink-0" />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--md-primary)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
+                  Page {currentPage} Bookmarked
+                </p>
+                <p style={{ fontSize: 12, color: 'var(--md-on-surface)', margin: '2px 0 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {currentPageBookmark.name}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => onDeleteBookmark(currentPageBookmark.id)}
+              className="text-xs font-semibold px-2.5 py-1 rounded transition-colors flex-shrink-0"
+              style={{ background: 'rgba(255, 180, 171, 0.12)', color: 'var(--md-error)', border: '1px solid rgba(255, 180, 171, 0.25)' }}
+              title="Remove bookmark for this page"
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{
+          background: 'var(--md-surface-3)',
+          borderRadius: 12,
+          padding: '12px 14px',
+          marginBottom: 16,
+          border: '1px solid var(--md-outline-variant)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Repeat className="w-3.5 h-3.5 text-orange-400 animate-pulse" />
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#fb923c', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
-                Active Loop Detected
-              </p>
-            </div>
-            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--md-on-surface-variant)', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: 4 }}>
-              {activeLoopRange.startMeasure && activeLoopRange.endMeasure ? `m. ${activeLoopRange.startMeasure}–${activeLoopRange.endMeasure}` : 'Custom Range'}
-            </span>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+              Bookmark Page {currentPage}
+            </p>
+            <button
+              type="button"
+              onClick={() => onAddBookmark(`Page ${currentPage}`, currentPage)}
+              className="md-btn-filled"
+              style={{
+                padding: '4px 10px',
+                fontSize: 11,
+                borderRadius: 8,
+                fontWeight: 600,
+              }}
+              title="Quickly bookmark this page"
+            >
+              + Quick Add
+            </button>
           </div>
-
-          <form onSubmit={handleAddActiveLoopSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <form onSubmit={handleAddPageSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <input
               type="text"
-              value={newLoopBookmarkName}
-              onChange={e => setNewLoopBookmarkName(e.target.value)}
-              placeholder={`e.g. ${defaultLoopName || 'Bridge Solo, Tricky Run'}`}
+              value={newPageBookmarkName}
+              onChange={e => setNewPageBookmarkName(e.target.value)}
+              placeholder="Custom label (e.g. Movement II, Coda)"
               maxLength={50}
               style={{
                 padding: '8px 12px',
@@ -160,69 +180,23 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                 outline: 'none',
               }}
             />
-            <button
-              type="submit"
-              className="md-btn-filled"
-              style={{
-                padding: '6px 14px',
-                fontSize: 12,
-                borderRadius: 8,
-                background: '#ea580c',
-                color: '#ffffff',
-                fontWeight: 600,
-                alignSelf: 'flex-end',
-              }}
-            >
-              Add Loop Bookmark
-            </button>
+            {newPageBookmarkName.trim() && (
+              <button
+                type="submit"
+                className="md-btn-filled"
+                style={{
+                  padding: '5px 12px',
+                  fontSize: 11,
+                  borderRadius: 8,
+                  alignSelf: 'flex-end',
+                }}
+              >
+                Save Named Bookmark
+              </button>
+            )}
           </form>
         </div>
       )}
-
-      {/* Add Page Bookmark form */}
-      <div style={{
-        background: 'var(--md-surface-3)',
-        borderRadius: 12,
-        padding: '12px 14px',
-        marginBottom: 16,
-        border: '1px solid var(--md-outline-variant)'
-      }}>
-        <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--md-on-surface-variant)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8, margin: 0 }}>
-          Add Page Bookmark (p. {currentPage})
-        </p>
-        <form onSubmit={handleAddPageSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-          <input
-            type="text"
-            value={newPageBookmarkName}
-            onChange={e => setNewPageBookmarkName(e.target.value)}
-            placeholder="e.g. Movement II, Coda, Interlude"
-            maxLength={50}
-            style={{
-              padding: '8px 12px',
-              fontSize: 12,
-              borderRadius: 6,
-              background: 'var(--md-surface-1)',
-              color: 'var(--md-on-surface)',
-              border: '1px solid var(--md-outline-variant)',
-              outline: 'none',
-            }}
-          />
-          <button
-            type="submit"
-            disabled={!newPageBookmarkName.trim()}
-            className="md-btn-filled"
-            style={{
-              padding: '6px 14px',
-              fontSize: 12,
-              borderRadius: 8,
-              alignSelf: 'flex-end',
-              opacity: !newPageBookmarkName.trim() ? 0.5 : 1,
-            }}
-          >
-            Add Bookmark
-          </button>
-        </form>
-      </div>
 
       {/* Filter Tabs if both types exist or score is MusicXML */}
       {isMusicXml && bookmarks.length > 0 && (
@@ -405,6 +379,17 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                           opacity: isSelected ? 0.9 : 0.7
                         }}>
                           Page {bm.page}
+                        </span>
+                      )}
+                      {!isLoop && bm.page === currentPage && (
+                        <span
+                          className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider"
+                          style={{
+                            background: 'var(--md-primary)',
+                            color: 'var(--md-on-primary)',
+                          }}
+                        >
+                          Current
                         </span>
                       )}
                     </div>

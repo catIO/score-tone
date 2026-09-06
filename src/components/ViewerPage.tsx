@@ -12,6 +12,7 @@ import MusicXmlViewer from './MusicXmlViewer';
 import DisplayControls from './DisplayControls';
 import SettingsPanel from './SettingsPanel';
 import BookmarksPanel from './BookmarksPanel';
+import ViewerSideRail from './ViewerSideRail';
 import SvgFilters from './SvgFilters';
 import { googleDriveService } from '../services/googleDriveService';
 import { useWakeLock } from '../hooks/useWakeLock';
@@ -58,6 +59,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Active filter state
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
   const [zoom, setZoom] = useState<number>(1.0);
+
+  const isCurrentPageBookmarked = (file.bookmarks || []).some(
+    bm => bm.page === currentPage && bm.type !== 'loop'
+  );
+  const bookmarksCount = (file.bookmarks || []).length;
+  const isAnyPanelOpen = isBookmarksOpen || isDisplayOpen || isSettingsOpen;
 
   const hideTimerRef = useRef<number | null>(null);
   // Tracks last page-turn timestamp for Bluetooth pedal debouncing
@@ -477,7 +484,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
     // Click outside sidebars to close them
     if (isDisplayOpen || isSettingsOpen || isBookmarksOpen) {
-      if (!target.closest('.sidebar-control-panel') && !target.closest('.md-top-bar')) {
+      if (!target.closest('.sidebar-control-panel') && !target.closest('.md-top-bar') && !target.closest('.side-rail-panel')) {
         setIsDisplayOpen(false);
         setIsSettingsOpen(false);
         setIsBookmarksOpen(false);
@@ -485,7 +492,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       }
     }
 
-    if (target.closest('.sidebar-control-panel') || target.closest('.md-top-bar') || target.closest('button') || target.closest('input')) return;
+    if (target.closest('.sidebar-control-panel') || target.closest('.md-top-bar') || target.closest('.side-rail-panel') || target.closest('button') || target.closest('input')) return;
 
     const { clientX } = e;
     const { offsetWidth, offsetHeight } = containerRef.current;
@@ -517,6 +524,17 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       onFileMetadataUpdated?.(updatedFile);
     } catch (err) {
       console.warn('Failed to add bookmark', err);
+    }
+  };
+
+  const handleToggleCurrentPageBookmark = async () => {
+    const existing = (file.bookmarks || []).find(
+      bm => bm.page === currentPage && bm.type !== 'loop'
+    );
+    if (existing) {
+      await handleDeleteBookmark(existing.id);
+    } else {
+      await handleAddBookmark(`Page ${currentPage}`, currentPage);
     }
   };
 
@@ -693,13 +711,84 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             countInEnabled={countInEnabled}
             onToggleCountIn={handleToggleCountIn}
             onToggleLoop={isMusicXml ? handleToggleLoop : undefined}
+            isCurrentPageBookmarked={isCurrentPageBookmarked}
+            onToggleCurrentPageBookmark={handleToggleCurrentPageBookmark}
           />
         </div>
       </div>
 
+      {/* Invisible hover hot-zone at right edge — triggers side rail and controls */}
+      {appSettings.autoHideControls && !isAnyPanelOpen && (
+        <div
+          className="absolute top-0 right-0 bottom-0 z-40"
+          style={{
+            width: '20vw',
+            minWidth: 80,
+            pointerEvents: 'auto',
+          }}
+          onMouseEnter={handleHotZoneEnter}
+          onMouseLeave={handleHotZoneLeave}
+        />
+      )}
+
+      {/* Side Rail: Bookmarks, Display, Settings */}
+      <ViewerSideRail
+        isBookmarksOpen={isBookmarksOpen}
+        onToggleBookmarks={() => {
+          setIsBookmarksOpen(p => !p);
+          setIsDisplayOpen(false);
+          setIsSettingsOpen(false);
+        }}
+        bookmarksCount={bookmarksCount}
+        isCurrentPageBookmarked={isCurrentPageBookmarked}
+        isDisplayOpen={isDisplayOpen}
+        onToggleDisplay={() => {
+          setIsDisplayOpen(p => !p);
+          setIsSettingsOpen(false);
+          setIsBookmarksOpen(false);
+        }}
+        isSettingsOpen={isSettingsOpen}
+        onToggleSettings={() => {
+          setIsSettingsOpen(p => !p);
+          setIsDisplayOpen(false);
+          setIsBookmarksOpen(false);
+        }}
+        visible={!appSettings.autoHideControls || toolbarVisible || isAnyPanelOpen}
+        isAnyPanelOpen={isAnyPanelOpen}
+        onMouseEnter={handleHotZoneEnter}
+        onMouseLeave={handleHotZoneLeave}
+      />
+
       {/* Score Viewport: MusicXML or PDF */}
       <div className="w-full h-full relative"
         style={{ '--pdf-bg': filters.backgroundColor, '--pdf-mix-blend': 'multiply' } as React.CSSProperties}>
+        {/* Discreet bookmark indicator ribbon on bookmarked pages */}
+        {isCurrentPageBookmarked && (
+          <button
+            onClick={() => {
+              setIsBookmarksOpen(true);
+              setIsDisplayOpen(false);
+              setIsSettingsOpen(false);
+            }}
+            className="absolute top-2 right-4 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95"
+            style={{
+              background: 'rgba(255, 183, 77, 0.18)',
+              border: '1px solid rgba(255, 183, 77, 0.45)',
+              backdropFilter: 'blur(8px)',
+              color: 'var(--md-primary)',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+            }}
+            title={`Page ${currentPage} is bookmarked — click to view bookmarks`}
+          >
+            <span
+              className="material-symbols-outlined text-[16px] leading-none"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              bookmark
+            </span>
+            <span className="text-[11px] font-bold tracking-wide">P. {currentPage}</span>
+          </button>
+        )}
         <div style={tintStyle} />
         <div className="w-full h-full" style={{ filter: cssFilterString, transition: 'filter 150ms' }}>
           {isMusicXml && xmlContent ? (
