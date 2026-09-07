@@ -59,6 +59,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Active filter state
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
   const [zoom, setZoom] = useState<number>(1.0);
+  const [scrollToLoopTrigger, setScrollToLoopTrigger] = useState<number>(0);
 
   const isCurrentPageBookmarked = (file.bookmarks || []).some(
     bm => bm.page === currentPage && bm.type !== 'loop'
@@ -564,12 +565,37 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
   };
 
-  const handleSelectLoopBookmark = (bm: Bookmark) => {
+  const handleSelectLoopBookmark = (bm: Bookmark, autoPlay = false) => {
     if (!bm.loopRange) return;
     if (bm.page && bm.page !== currentPage) {
       handlePageChange(bm.page);
     }
+
+    const isLoopMatching =
+      Boolean(playbackState.loopRange &&
+      Math.abs(playbackState.loopRange.startBeat - bm.loopRange.startBeat) < 0.05 &&
+      Math.abs(playbackState.loopRange.endBeat - bm.loopRange.endBeat) < 0.05);
+
+    // If play button clicked on currently playing loop, toggle pause
+    if (autoPlay && isLoopMatching && playbackState.isPlaying) {
+      audioPlaybackService.pause();
+      return;
+    }
+
+    // "Clicking somewhere else just sets the in and out and scrolls to the in"
+    // Pause if currently playing so selecting the item doesn't continue playback
+    if (!autoPlay && audioPlaybackService.isPlaying()) {
+      audioPlaybackService.pause();
+    }
+
     audioPlaybackService.applyLoopRange(bm.loopRange, bm.bpm);
+    setScrollToLoopTrigger(Date.now());
+
+    if (autoPlay) {
+      audioPlaybackService.play(bm.bpm || playbackState.bpm).catch(err => {
+        console.error('Audio playback failed:', err);
+      });
+    }
   };
 
   const handleDeleteBookmark = async (id: string) => {
@@ -795,6 +821,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             <MusicXmlViewer
               xmlContent={xmlContent}
               zoom={zoom}
+              scrollToLoopTrigger={scrollToLoopTrigger}
               onRenderComplete={({ totalPages: pages }) => {
                 setTotalPages(Math.max(1, pages));
               }}

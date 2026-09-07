@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle, CloudOff, X, Music, Repeat, Cloud, Info, BookOpen, Sliders, Play, Bookmark as BookmarkIcon } from 'lucide-react';
+import {
+  FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle,
+  CloudOff, X, Music, Repeat, Cloud, Info, BookOpen, Sliders, Play,
+  Bookmark as BookmarkIcon, LayoutGrid, List, Search, ArrowUpDown
+} from 'lucide-react';
 import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
@@ -11,6 +15,13 @@ interface LibraryPageProps {
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const [files, setFiles] = useState<ScoreFile[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'local' | 'drive'>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    return (localStorage.getItem('scoretone_view_mode') as 'grid' | 'list') || 'grid';
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'recent' | 'name' | 'size' | 'bookmarks'>('recent');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false); // true only during Drive auth + picker
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -28,6 +39,32 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const isGoogleConfigured = googleDriveService.isConfigured();
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounter = useRef(0);
+
+  const handleViewModeChange = (mode: 'grid' | 'list') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('scoretone_view_mode', mode);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Keyboard shortcut: '/' or 'Cmd+K' to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showAboutModal || showGuideModal) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (e.key === '/' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showAboutModal, showGuideModal]);
 
   const handleContainerDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
@@ -395,11 +432,32 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const formatDate = (ts: number) =>
     new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-  const filteredFiles = files.filter(f => {
-    if (activeTab === 'local') return f.source === 'local';
-    if (activeTab === 'drive') return f.source === 'google-drive';
-    return true;
-  });
+  const filteredFiles = files
+    .filter(f => {
+      if (activeTab === 'local') return f.source === 'local';
+      if (activeTab === 'drive') return f.source === 'google-drive';
+      return true;
+    })
+    .filter(f => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      if (f.name.toLowerCase().includes(q)) return true;
+      if (f.bookmarks && f.bookmarks.some(b => b.name.toLowerCase().includes(q))) return true;
+      return false;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+      }
+      if (sortBy === 'size') {
+        return (b.size || 0) - (a.size || 0);
+      }
+      if (sortBy === 'bookmarks') {
+        return (b.bookmarks?.length || 0) - (a.bookmarks?.length || 0);
+      }
+      // Default: 'recent'
+      return b.lastOpened - a.lastOpened;
+    });
 
   const tabs: { key: typeof activeTab; label: string }[] = [
     { key: 'all', label: 'All' },
@@ -407,9 +465,72 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
     { key: 'drive', label: 'Drive' },
   ];
 
+  const renderShareDropdown = (file: ScoreFile, placement: 'top' | 'bottom' = 'bottom') => (
+    <div
+      ref={el => { if (el) shareMenuRefs.current.set(file.id, el); else shareMenuRefs.current.delete(file.id); }}
+      className="relative"
+    >
+      <button
+        onClick={e => { e.stopPropagation(); setOpenShareId(id => id === file.id ? null : file.id); }}
+        className={`md-icon-btn ${openShareId === file.id ? 'active' : ''}`}
+        title="Share"
+        style={{ width: 30, height: 30 }}
+      >
+        <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+        </svg>
+      </button>
+
+      {openShareId === file.id && (
+        <div
+          style={{
+            position: 'absolute',
+            ...(placement === 'top'
+              ? { bottom: 'calc(100% + 6px)', left: 0 }
+              : { top: 'calc(100% + 6px)', right: 0 }),
+            minWidth: 200,
+            background: 'var(--md-surface-3)',
+            border: '1px solid var(--md-outline-variant)',
+            borderRadius: 12,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+            overflow: 'hidden',
+            zIndex: 200,
+          }}
+        >
+          <button
+            onClick={e => handleCopyScoreLink(file, e)}
+            className="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-left transition-colors hover:bg-white/5"
+            style={{ color: 'var(--md-on-surface)' }}
+          >
+            <span className="material-symbols-outlined text-[15px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+              {copiedState?.id === file.id && copiedState.type === 'score' ? 'check' : 'menu_book'}
+            </span>
+            {copiedState?.id === file.id && copiedState.type === 'score' ? 'Copied!' : 'Copy link to score'}
+          </button>
+
+          <div style={{ height: 1, background: 'var(--md-outline-variant)', margin: '0 12px' }} />
+
+          <button
+            onClick={e => handleCopyPageLink(file, e)}
+            className="flex items-center gap-3 w-full px-4 py-2.5 text-xs text-left transition-colors hover:bg-white/5"
+            style={{ color: 'var(--md-on-surface)' }}
+          >
+            <span className="material-symbols-outlined text-[15px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
+              {copiedState?.id === file.id && copiedState.type === 'page' ? 'check' : 'article'}
+            </span>
+            {copiedState?.id === file.id && copiedState.type === 'page'
+              ? 'Copied!'
+              : `Copy link to page ${file.lastPage}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
-      className="page-container overflow-y-auto relative min-h-screen"
+      className="page-container overflow-y-auto relative min-h-screen ambient-hero-glow"
       style={{ background: 'var(--md-surface)' }}
       onDragEnter={handleContainerDragEnter}
       onDragLeave={handleContainerDragLeave}
@@ -423,25 +544,27 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml,text/plain,application/octet-stream,text/*"
         className="hidden"
       />
-      <div className="max-w-5xl mx-auto w-full px-4 py-6 md:px-8 md:py-8">
+      <div className="max-w-6xl mx-auto w-full px-4 py-6 md:px-8 md:py-8">
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             {/* Logo */}
-            <svg viewBox="0 -960 960 960" className="w-10 h-10 flex-shrink-0">
-              {/* Outer folder frames */}
-              <path
-                d="M320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z"
-                fill="currentColor"
-                style={{ color: 'var(--md-on-surface-variant)' }}
-              />
-              {/* The note (amber yellow tint) */}
-              <path
-                d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29Z"
-                fill="#FFB300"
-              />
-            </svg>
+            <div className="relative">
+              <svg viewBox="0 -960 960 960" className="w-10 h-10 flex-shrink-0 drop-shadow-sm">
+                {/* Outer folder frames */}
+                <path
+                  d="M320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z"
+                  fill="currentColor"
+                  style={{ color: 'var(--md-on-surface-variant)' }}
+                />
+                {/* The note (amber yellow tint) */}
+                <path
+                  d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29Z"
+                  fill="#FFB300"
+                />
+              </svg>
+            </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
                 Score Tone
@@ -454,7 +577,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowGuideModal(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-all hover:bg-white/10 active:scale-95"
+              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all hover:bg-white/10 active:scale-95"
               style={{
                 background: 'var(--md-surface-2)',
                 color: 'var(--md-primary)',
@@ -467,7 +590,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             </button>
             <button
               onClick={() => setShowAboutModal(true)}
-              className="text-xs font-semibold px-3 py-1.5 rounded-full transition-colors"
+              className="text-xs font-semibold px-3.5 py-1.5 rounded-full transition-colors"
               style={{
                 background: 'var(--md-surface-2)',
                 color: 'var(--md-on-surface-variant)',
@@ -491,10 +614,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
           </div>
         )}
 
-        {/* ── Library Header Bar ── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h2 className="text-lg font-bold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
+        {/* ── Library Title & Action Cluster ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
               My Library
             </h2>
             <span
@@ -505,30 +628,15 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                 border: '1px solid var(--md-outline-variant)',
               }}
             >
-              {files.length} {files.length === 1 ? 'score' : 'scores'}
+              {filteredFiles.length === files.length
+                ? `${files.length} ${files.length === 1 ? 'score' : 'scores'}`
+                : `${filteredFiles.length} of ${files.length}`}
             </span>
-
-            {/* Filter Tabs */}
-            <div className="flex rounded-full overflow-hidden ml-1" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
-              {tabs.map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className="px-3.5 py-1 text-xs font-semibold transition-colors"
-                  style={{
-                    background: activeTab === tab.key ? 'var(--md-primary-container)' : 'transparent',
-                    color: activeTab === tab.key ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Action cluster on right */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Offline status pill (only shown when disconnected) */}
+            {/* Offline status pill */}
             {!isOnline && (
               <div
                 className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold flex-shrink-0"
@@ -547,7 +655,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             {/* Add Score button */}
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 h-8 px-3.5 rounded-full text-xs font-semibold transition-all hover:brightness-110 active:scale-95 flex-shrink-0 shadow-sm"
+              className="flex items-center gap-1.5 h-8 px-4 rounded-full text-xs font-semibold transition-all hover:brightness-110 active:scale-95 flex-shrink-0 shadow-sm"
               style={{
                 background: 'var(--md-primary)',
                 color: 'var(--md-on-primary)',
@@ -592,31 +700,138 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
           </div>
         </div>
 
-        {/* ── Library Content (Full-Width) ── */}
+        {/* ── Search, Filter & View Controls Bar ── */}
+        {files.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6 p-2 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') {
+                    setSearchQuery('');
+                    searchInputRef.current?.blur();
+                  }
+                }}
+                placeholder="Search scores or bookmarks... (Press /)"
+                className="w-full pl-9 pr-8 py-1.5 rounded-full text-xs transition-all focus:outline-none focus:ring-1 focus:ring-amber-400/50"
+                style={{
+                  background: 'var(--md-surface-1)',
+                  color: 'var(--md-on-surface)',
+                  border: '1px solid var(--md-outline-variant)'
+                }}
+              />
+              {searchQuery ? (
+                <button
+                  onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-zinc-400 hover:text-zinc-200"
+                  title="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              ) : (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 bg-white/5 rounded border border-white/10">/</kbd>
+                </div>
+              )}
+            </div>
+
+            {/* Tabs, Sort, and Grid/List view toggle */}
+            <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
+              {/* Filter Tabs */}
+              <div className="flex rounded-full overflow-hidden p-0.5" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
+                {tabs.map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className="px-3 py-1 text-xs font-semibold rounded-full transition-colors"
+                    style={{
+                      background: activeTab === tab.key ? 'var(--md-primary-container)' : 'transparent',
+                      color: activeTab === tab.key ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort Dropdown */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+                <ArrowUpDown className="w-3 h-3 text-zinc-400 shrink-0" />
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value as any)}
+                  className="bg-transparent text-xs focus:outline-none cursor-pointer pr-1"
+                  style={{ color: 'var(--md-on-surface)' }}
+                >
+                  <option value="recent" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Recent</option>
+                  <option value="name" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Title (A–Z)</option>
+                  <option value="size" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Size</option>
+                  <option value="bookmarks" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Bookmarks</option>
+                </select>
+              </div>
+
+              {/* View Mode Toggle */}
+              <div className="flex items-center rounded-full p-0.5" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
+                <button
+                  onClick={() => handleViewModeChange('grid')}
+                  className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid' ? 'text-amber-400 bg-white/10 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => handleViewModeChange('list')}
+                  className={`p-1.5 rounded-full transition-colors ${viewMode === 'list' ? 'text-amber-400 bg-white/10 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  title="List view"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Library Content ── */}
         {files.length === 0 ? (
           /* Empty Library Onboarding Hero */
           <div
             onClick={() => fileInputRef.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={handleDrop}
-            className="flex flex-col items-center justify-center p-12 md:p-16 rounded-3xl cursor-pointer transition-all hover:border-[var(--md-primary)] text-center my-6"
+            className="flex flex-col items-center justify-center p-12 md:p-16 rounded-3xl cursor-pointer transition-all hover:border-[var(--md-primary)] text-center my-6 relative overflow-hidden group"
             style={{
               border: '2px dashed var(--md-outline-variant)',
               background: 'var(--md-surface-1)',
             }}
           >
+            <div className="absolute inset-0 score-cover-staves opacity-30 pointer-events-none" />
             <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-md"
+              className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 shadow-lg group-hover:scale-105 transition-transform"
               style={{ background: 'var(--md-primary-container)', color: 'var(--md-on-primary-container)' }}
             >
               <FileUp className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-bold mb-1" style={{ color: 'var(--md-on-surface)' }}>
+            <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--md-on-surface)' }}>
               Add your first sheet music
             </h3>
-            <p className="text-sm max-w-sm mb-6" style={{ color: 'var(--md-on-surface-variant)' }}>
+            <p className="text-sm max-w-sm mb-4" style={{ color: 'var(--md-on-surface-variant)' }}>
               Drop a PDF or MusicXML file here, or click to browse files on your device.
             </p>
+
+            <div className="flex items-center gap-2 mb-6">
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                PDF (.pdf)
+              </span>
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-300 border border-orange-500/20">
+                MusicXML (.xml, .musicxml, .mxl)
+              </span>
+            </div>
+
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -645,209 +860,348 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             </div>
           </div>
         ) : filteredFiles.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 rounded-2xl gap-3"
-            style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface-variant)' }}>
-            <FileText className="w-10 h-10 opacity-30" />
-            <p className="text-sm font-medium">No {activeTab === 'all' ? '' : activeTab} scores found</p>
-            {activeTab === 'drive' && isGoogleConfigured && (
+          <div className="flex flex-col items-center justify-center py-16 rounded-2xl gap-3 text-center"
+            style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/5 text-zinc-400">
+              <Search className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-zinc-200">
+                {searchQuery ? `No scores matching "${searchQuery}"` : `No ${activeTab === 'all' ? '' : activeTab} scores found`}
+              </p>
+              <p className="text-xs text-zinc-400 mt-1">
+                {searchQuery ? 'Check your spelling or try clearing the search filter' : 'Try switching categories or uploading a new score'}
+              </p>
+            </div>
+            {searchQuery ? (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="md-btn-tonal text-xs py-1.5 px-4 rounded-full mt-2"
+              >
+                Clear Search
+              </button>
+            ) : activeTab === 'drive' && isGoogleConfigured ? (
               <button
                 onClick={handleGoogleDrivePick}
                 className="md-btn-tonal text-xs py-1.5 px-4 rounded-full mt-2"
               >
                 Open from Google Drive
               </button>
-            )}
+            ) : null}
+          </div>
+        ) : viewMode === 'grid' ? (
+          /* ── Modern Card Grid View ── */
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
+            {filteredFiles.map(file => (
+              <div
+                key={file.id}
+                onClick={() => handleFileClick(file)}
+                className="group relative flex flex-col rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 border border-white/[0.08] hover:border-amber-400/40 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50"
+                style={{ background: 'var(--md-surface-1)' }}
+              >
+                {/* Score Cover */}
+                <div className="relative aspect-[16/10] w-full overflow-hidden flex flex-col justify-between p-3.5 bg-gradient-to-br from-[#26221c] via-[#1a1815] to-[#121110] border-b border-white/[0.06]">
+                  {/* Stave lines overlay */}
+                  <div className="absolute inset-0 score-cover-staves opacity-50 pointer-events-none" />
+
+                  {/* Faint musical note watermark */}
+                  <div className="absolute right-2 bottom-0 text-white/[0.04] pointer-events-none select-none">
+                    <Music className="w-24 h-24 transform rotate-12" />
+                  </div>
+
+                  {/* Top Badges Row */}
+                  <div className="relative z-10 flex items-center justify-between gap-1.5 w-full">
+                    {/* Format chip */}
+                    {isMusicXmlFile(file) ? (
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 backdrop-blur-sm">
+                        <Music className="w-2.5 h-2.5" />
+                        MusicXML
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25 backdrop-blur-sm">
+                        <FileText className="w-2.5 h-2.5" />
+                        PDF
+                      </span>
+                    )}
+
+                    {/* Source / Offline chip */}
+                    {file.source === 'google-drive' ? (
+                      file.offline ? (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 backdrop-blur-sm" title="Saved offline">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          Offline
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/20 backdrop-blur-sm" title="Stored on Google Drive">
+                          <Cloud className="w-2.5 h-2.5" />
+                          Drive
+                        </span>
+                      )
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10 backdrop-blur-sm" title="Local storage">
+                        <HardDrive className="w-2.5 h-2.5" />
+                        Local
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Center Hover Action */}
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center z-20 pointer-events-none">
+                    <span className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-400 text-amber-950 font-bold text-xs shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      Open Score
+                    </span>
+                  </div>
+
+                  {/* Bottom Cover Row: Date & Last Page */}
+                  <div className="relative z-10 flex items-end justify-between w-full">
+                    <span className="text-[10px] font-medium text-zinc-400">
+                      {formatDate(file.lastOpened)}
+                    </span>
+                    {!isMusicXmlFile(file) && file.lastPage && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-black/60 text-zinc-300 border border-white/10 backdrop-blur-sm">
+                        p. {file.lastPage}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-3.5 flex flex-col flex-1 justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold leading-snug line-clamp-2 text-zinc-100 group-hover:text-amber-300 transition-colors" title={file.name}>
+                      {file.name}
+                    </h3>
+                    <p className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
+                      <span>{formatSize(file.size)}</span>
+                      {file.bookmarks && file.bookmarks.length > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-amber-400/90 font-medium">
+                            {file.bookmarks.length} {file.bookmarks.length === 1 ? 'bookmark' : 'bookmarks'}
+                          </span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+
+                  {/* Bookmarks / practice loops */}
+                  {file.bookmarks && file.bookmarks.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {[...file.bookmarks]
+                        .sort((a, b) => a.page - b.page)
+                        .slice(0, 2)
+                        .map(bm => {
+                          const isLoop = bm.type === 'loop';
+                          const loopMeasures = isLoop && bm.loopRange?.startMeasure && bm.loopRange?.endMeasure;
+                          const alreadyHasMeasuresInName = loopMeasures && (bm.name.includes('m.') || bm.name.includes(`${bm.loopRange?.startMeasure}`));
+                          return (
+                            <button
+                              key={bm.id}
+                              onClick={(e) => handleBookmarkClick(file, bm, e)}
+                              className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 max-w-full truncate"
+                              style={{
+                                background: isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)',
+                                color: isLoop ? '#fb923c' : 'var(--md-primary)',
+                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid rgba(255, 183, 77, 0.2)'
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.26)' : 'rgba(255, 183, 77, 0.22)';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)';
+                              }}
+                              title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
+                            >
+                              {isLoop ? <Repeat className="w-2.5 h-2.5 shrink-0" /> : <BookmarkIcon className="w-2.5 h-2.5 shrink-0" />}
+                              <span className="truncate">{bm.name}</span>
+                              {loopMeasures && !alreadyHasMeasuresInName ? (
+                                <span className="opacity-70 font-normal shrink-0">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
+                              ) : !isLoop ? (
+                                <span className="opacity-60 font-normal shrink-0">(p.{bm.page})</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      {file.bookmarks.length > 2 && (
+                        <span className="text-[10px] text-zinc-500 self-center px-1">
+                          +{file.bookmarks.length - 2} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Card Actions Footer */}
+                  <div
+                    className="flex items-center justify-between pt-2 mt-auto border-t border-white/[0.06]"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <div className="flex items-center gap-1">
+                      {renderShareDropdown(file, 'top')}
+                      {file.source === 'google-drive' && (
+                        <button
+                          onClick={e => toggleOfflineCache(file, e)}
+                          className="md-icon-btn text-zinc-400 hover:text-white"
+                          title={file.offline ? 'Remove offline copy (keep in cloud)' : 'Download for offline access'}
+                          style={{ width: 30, height: 30 }}
+                        >
+                          {file.offline ? <CloudOff className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={e => deleteFileRecord(file.id, e)}
+                      className="md-icon-btn text-zinc-400 hover:text-rose-400 transition-colors"
+                      title="Remove from library"
+                      style={{ width: 30, height: 30 }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
-              <div className="flex flex-col gap-2">
-                {filteredFiles.map(file => (
-                  <div
-                    key={file.id}
-                    onClick={() => handleFileClick(file)}
-                    className="flex items-start gap-4 px-4 py-3.5 rounded-xl cursor-pointer transition-colors group"
-                    style={{ background: 'var(--md-surface-1)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'var(--md-surface-1)')}
-                  >
-                    {/* Icon */}
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                      style={{ background: 'var(--md-surface-3)' }}>
-                      {file.source === 'google-drive' ? (
-                        <svg width="20" height="20" viewBox="0 0 87.3 78" fill="none">
-                          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
-                          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
-                          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-                        </svg>
-                      ) : isMusicXmlFile(file) ? (
-                        <Music className="w-5 h-5 text-orange-400" />
-                      ) : (
-                        <HardDrive className="w-5 h-5" style={{ color: 'var(--md-on-surface-variant)' }} />
-                      )}
-                    </div>
+          /* ── Modern Refined List View ── */
+          <div className="flex flex-col gap-2">
+            {filteredFiles.map(file => (
+              <div
+                key={file.id}
+                onClick={() => handleFileClick(file)}
+                className="flex items-start gap-4 px-4 py-3.5 rounded-xl cursor-pointer transition-all border border-white/[0.05] group"
+                style={{ background: 'var(--md-surface-1)' }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'var(--md-surface-2)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 183, 77, 0.25)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'var(--md-surface-1)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+                }}
+              >
+                {/* Icon */}
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 relative overflow-hidden"
+                  style={{ background: 'var(--md-surface-3)' }}>
+                  <div className="absolute inset-0 score-cover-staves opacity-30 pointer-events-none" />
+                  {file.source === 'google-drive' ? (
+                    <svg width="20" height="20" viewBox="0 0 87.3 78" fill="none">
+                      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+                      <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
+                      <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
+                      <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+                      <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+                      <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+                    </svg>
+                  ) : isMusicXmlFile(file) ? (
+                    <Music className="w-5 h-5 text-orange-400" />
+                  ) : (
+                    <FileText className="w-5 h-5" style={{ color: 'var(--md-primary)' }} />
+                  )}
+                </div>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>
-                          {file.name}
-                        </p>
-                        {isMusicXmlFile(file) && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 flex-shrink-0">
-                            MusicXML
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
-                        {[formatSize(file.size), !isMusicXmlFile(file) ? `p.${file.lastPage}` : undefined, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
-                      </p>
-                      {file.bookmarks && file.bookmarks.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {[...file.bookmarks]
-                            .sort((a, b) => a.page - b.page)
-                            .map(bm => {
-                              const isLoop = bm.type === 'loop';
-                              const loopMeasures = isLoop && bm.loopRange?.startMeasure && bm.loopRange?.endMeasure;
-                              const alreadyHasMeasuresInName = loopMeasures && (bm.name.includes('m.') || bm.name.includes(`${bm.loopRange?.startMeasure}`));
-                              return (
-                                <button
-                                  key={bm.id}
-                                  onClick={(e) => handleBookmarkClick(file, bm, e)}
-                                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
-                                  style={{
-                                    background: isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)',
-                                    color: isLoop ? '#fb923c' : 'var(--md-primary)',
-                                    border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid rgba(255, 183, 77, 0.2)'
-                                  }}
-                                  onMouseEnter={e => {
-                                    e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.26)' : 'rgba(255, 183, 77, 0.22)';
-                                  }}
-                                  onMouseLeave={e => {
-                                    e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)';
-                                  }}
-                                  title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
-                                >
-                                  {isLoop ? (
-                                    <Repeat className="w-2.5 h-2.5" />
-                                  ) : (
-                                    <span className="material-symbols-outlined text-[10px] leading-none">bookmark</span>
-                                  )}
-                                  {bm.name}
-                                  {loopMeasures && !alreadyHasMeasuresInName ? (
-                                    <span className="opacity-70 font-normal">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
-                                  ) : !isLoop ? (
-                                    <span className="opacity-60 font-normal">(p.{bm.page})</span>
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Right column: Offline / Cloud chip + Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
-                      {file.source === 'google-drive' && (
-                        file.offline ? (
-                          <span className="md-chip md-chip-success" title="Saved locally — available offline">
-                            <CheckCircle2 className="w-3 h-3" /> Saved Offline
-                          </span>
-                        ) : (
-                          <span className="md-chip md-chip-warning" title="Stored on Google Drive — requires internet to open">
-                            <Cloud className="w-3 h-3" /> Cloud Only
-                          </span>
-                        )
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {/* Share dropdown */}
-                        <div
-                          ref={el => { if (el) shareMenuRefs.current.set(file.id, el); else shareMenuRefs.current.delete(file.id); }}
-                          style={{ position: 'relative' }}
-                        >
-                          <button
-                            onClick={e => { e.stopPropagation(); setOpenShareId(id => id === file.id ? null : file.id); }}
-                            className={`md-icon-btn ${openShareId === file.id ? 'active' : ''}`}
-                            title="Share"
-                            style={{ width: 32, height: 32 }}
-                          >
-                            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                            </svg>
-                          </button>
-
-                          {openShareId === file.id && (
-                            <div
-                              style={{
-                                position: 'absolute',
-                                top: 'calc(100% + 6px)',
-                                right: 0,
-                                minWidth: 200,
-                                background: 'var(--md-surface-3)',
-                                border: '1px solid var(--md-outline-variant)',
-                                borderRadius: 12,
-                                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-                                overflow: 'hidden',
-                                zIndex: 200,
-                              }}
-                            >
-                              <button
-                                onClick={e => handleCopyScoreLink(file, e)}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
-                                style={{ color: 'var(--md-on-surface)' }}
-                              >
-                                <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
-                                  {copiedState?.id === file.id && copiedState.type === 'score' ? 'check' : 'menu_book'}
-                                </span>
-                                {copiedState?.id === file.id && copiedState.type === 'score' ? 'Copied!' : 'Copy link to score'}
-                              </button>
-
-                              <div style={{ height: 1, background: 'var(--md-outline-variant)', margin: '0 12px' }} />
-
-                              <button
-                                onClick={e => handleCopyPageLink(file, e)}
-                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-left transition-colors hover:bg-white/5"
-                                style={{ color: 'var(--md-on-surface)' }}
-                              >
-                                <span className="material-symbols-outlined text-[16px] leading-none" style={{ color: 'var(--md-on-surface-variant)' }}>
-                                  {copiedState?.id === file.id && copiedState.type === 'page' ? 'check' : 'article'}
-                                </span>
-                                {copiedState?.id === file.id && copiedState.type === 'page'
-                                  ? 'Copied!'
-                                  : `Copy link to page ${file.lastPage}`}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        {file.source === 'google-drive' && (
-                          <button
-                            onClick={e => toggleOfflineCache(file, e)}
-                            className="md-icon-btn"
-                            title={file.offline ? 'Remove offline copy (keep in cloud)' : 'Download for offline access'}
-                            style={{ width: 32, height: 32 }}
-                          >
-                            {file.offline ? <CloudOff className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-                          </button>
-                        )}
-                        <button
-                          onClick={e => deleteFileRecord(file.id, e)}
-                          className="md-icon-btn"
-                          title="Remove from library"
-                          style={{ width: 32, height: 32 }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold truncate group-hover:text-amber-300 transition-colors" style={{ color: 'var(--md-on-surface)' }}>
+                      {file.name}
+                    </p>
+                    {isMusicXmlFile(file) && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 border border-orange-500/20 flex-shrink-0">
+                        MusicXML
+                      </span>
+                    )}
                   </div>
-                ))}
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+                    {[formatSize(file.size), !isMusicXmlFile(file) ? `p.${file.lastPage}` : undefined, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
+                  </p>
+                  {file.bookmarks && file.bookmarks.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {[...file.bookmarks]
+                        .sort((a, b) => a.page - b.page)
+                        .map(bm => {
+                          const isLoop = bm.type === 'loop';
+                          const loopMeasures = isLoop && bm.loopRange?.startMeasure && bm.loopRange?.endMeasure;
+                          const alreadyHasMeasuresInName = loopMeasures && (bm.name.includes('m.') || bm.name.includes(`${bm.loopRange?.startMeasure}`));
+                          return (
+                            <button
+                              key={bm.id}
+                              onClick={(e) => handleBookmarkClick(file, bm, e)}
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                              style={{
+                                background: isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)',
+                                color: isLoop ? '#fb923c' : 'var(--md-primary)',
+                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid rgba(255, 183, 77, 0.2)'
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.26)' : 'rgba(255, 183, 77, 0.22)';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)';
+                              }}
+                              title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
+                            >
+                              {isLoop ? (
+                                <Repeat className="w-2.5 h-2.5" />
+                              ) : (
+                                <span className="material-symbols-outlined text-[10px] leading-none">bookmark</span>
+                              )}
+                              {bm.name}
+                              {loopMeasures && !alreadyHasMeasuresInName ? (
+                                <span className="opacity-70 font-normal">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
+                              ) : !isLoop ? (
+                                <span className="opacity-60 font-normal">(p.{bm.page})</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right column: Offline / Cloud chip + Actions */}
+                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                  {file.source === 'google-drive' && (
+                    file.offline ? (
+                      <span className="md-chip md-chip-success" title="Saved locally — available offline">
+                        <CheckCircle2 className="w-3 h-3" /> Saved Offline
+                      </span>
+                    ) : (
+                      <span className="md-chip md-chip-warning" title="Stored on Google Drive — requires internet to open">
+                        <Cloud className="w-3 h-3" /> Cloud Only
+                      </span>
+                    )
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {renderShareDropdown(file, 'bottom')}
+
+                    {file.source === 'google-drive' && (
+                      <button
+                        onClick={e => toggleOfflineCache(file, e)}
+                        className="md-icon-btn"
+                        title={file.offline ? 'Remove offline copy (keep in cloud)' : 'Download for offline access'}
+                        style={{ width: 32, height: 32 }}
+                      >
+                        {file.offline ? <CloudOff className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                      </button>
+                    )}
+                    <button
+                      onClick={e => deleteFileRecord(file.id, e)}
+                      className="md-icon-btn hover:text-rose-400 transition-colors"
+                      title="Remove from library"
+                      style={{ width: 32, height: 32 }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
-            )}
+            ))}
+          </div>
+        )}
 
         {/* ── Footer ── */}
         <footer className="mt-16 border-t border-white/5 pt-8 pb-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>

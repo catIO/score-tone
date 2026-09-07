@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import type { Bookmark, ScoreFile } from '../services/storageService';
 import type { LoopRange, PlaybackState } from '../services/audioPlaybackService';
-import { Repeat, Bookmark as BookmarkIcon, Play, Link, Trash2, Check } from 'lucide-react';
+import { Repeat, Bookmark as BookmarkIcon, Play, Pause, Link, Trash2, Check } from 'lucide-react';
 
 interface BookmarksPanelProps {
   file: ScoreFile;
@@ -10,7 +10,7 @@ interface BookmarksPanelProps {
   onPageChange: (page: number) => void;
   onAddBookmark: (name: string, page: number) => void;
   onAddLoopBookmark?: (name: string, loopRange: LoopRange, bpm?: number) => void;
-  onSelectLoopBookmark?: (bm: Bookmark) => void;
+  onSelectLoopBookmark?: (bm: Bookmark, autoPlay?: boolean) => void;
   onDeleteBookmark: (id: string) => void;
   onClose: () => void;
   playbackState?: PlaybackState;
@@ -71,9 +71,16 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
 
   const handleItemClick = (bm: Bookmark) => {
     if (bm.type === 'loop' && bm.loopRange && onSelectLoopBookmark) {
-      onSelectLoopBookmark(bm);
+      onSelectLoopBookmark(bm, false);
     } else {
       onPageChange(bm.page);
+    }
+  };
+
+  const handlePlayClick = (bm: Bookmark, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (bm.type === 'loop' && bm.loopRange && onSelectLoopBookmark) {
+      onSelectLoopBookmark(bm, true);
     }
   };
 
@@ -287,9 +294,9 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
           filteredBookmarks.map(bm => {
             const isLoop = bm.type === 'loop';
             const isLoopMatching = isLoop &&
-              playbackState?.loopRange &&
-              playbackState.loopRange.startBeat === bm.loopRange?.startBeat &&
-              playbackState.loopRange.endBeat === bm.loopRange?.endBeat;
+              Boolean(playbackState?.loopRange && bm.loopRange &&
+              Math.abs(playbackState.loopRange.startBeat - bm.loopRange.startBeat) < 0.05 &&
+              Math.abs(playbackState.loopRange.endBeat - bm.loopRange.endBeat) < 0.05);
             const isPageActive = !isLoop && bm.page === currentPage;
             const isSelected = isLoop ? isLoopMatching : isPageActive;
 
@@ -398,24 +405,28 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   {isLoop && (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleItemClick(bm);
-                      }}
+                      onClick={(e) => handlePlayClick(bm, e)}
                       className="md-icon-btn"
-                      title="Activate Loop & Practice"
+                      title={isLoopMatching && playbackState?.isPlaying ? "Pause loop" : "Play loop"}
                       style={{
                         width: 28,
                         height: 28,
                         color: '#fb923c',
-                        background: 'rgba(234, 88, 12, 0.15)',
+                        background: isLoopMatching && playbackState?.isPlaying
+                          ? 'rgba(234, 88, 12, 0.35)'
+                          : 'rgba(234, 88, 12, 0.15)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         borderRadius: '50%',
+                        transition: 'all 150ms ease',
                       }}
                     >
-                      <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                      {isLoopMatching && playbackState?.isPlaying ? (
+                        <Pause className="w-3.5 h-3.5 fill-current" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                      )}
                     </button>
                   )}
                   <button

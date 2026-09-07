@@ -14,12 +14,14 @@ interface MusicXmlViewerProps {
   xmlContent: string;
   zoom: number;
   onRenderComplete?: (metadata: { totalPages: number }) => void;
+  scrollToLoopTrigger?: number;
 }
 
 export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   xmlContent,
   zoom,
   onRenderComplete,
+  scrollToLoopTrigger,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -61,6 +63,77 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
     return null;
   }, []);
+
+  // Scroll container to the IN point of the current loop range
+  const scrollToInPoint = useCallback(() => {
+    if (!containerRef.current || !scrollContainerRef.current) return;
+    const svgs = containerRef.current.querySelectorAll('svg');
+    if (svgs.length === 0) return;
+
+    const loopRange = audioPlaybackService.getLoopRange() || playbackState.loopRange;
+    if (!loopRange) return;
+
+    let targetSvg: SVGSVGElement | null = null;
+    let targetX = 0;
+    let targetY = 0;
+
+    if (loopRange.startNoteX !== undefined && loopRange.startNotePageIndex !== undefined) {
+      targetSvg = (svgs[loopRange.startNotePageIndex] as SVGSVGElement) || null;
+      targetX = loopRange.startNoteX;
+      targetY = loopRange.startNoteTopY ?? 40;
+    } else if (loopRange.startMeasure !== undefined && loopRange.startMeasure >= 0) {
+      const gMeasure = getGraphicMeasure(loopRange.startMeasure);
+      if (gMeasure && svgs[gMeasure.pageIndex]) {
+        targetSvg = svgs[gMeasure.pageIndex] as SVGSVGElement;
+        const measureRange = audioPlaybackService.getMeasureBeatRange(Math.max(0, loopRange.startMeasure - 1)) || { startBeat: 0, endBeat: 4 };
+        const mDur = Math.max(0.001, measureRange.endBeat - measureRange.startBeat);
+        const inProgress = Math.max(0, Math.min(1, (loopRange.startBeat - measureRange.startBeat) / mDur));
+        targetX = gMeasure.x + (gMeasure.width * inProgress);
+        targetY = gMeasure.topY;
+      }
+    } else {
+      const notes = audioPlaybackService.getScheduledNotes();
+      const note = notes.find(n => n.timeInBeats >= loopRange.startBeat);
+      const mNum = note ? note.measureIndex + 1 : 1;
+      const gMeasure = getGraphicMeasure(mNum);
+      if (gMeasure && svgs[gMeasure.pageIndex]) {
+        targetSvg = svgs[gMeasure.pageIndex] as SVGSVGElement;
+        targetX = gMeasure.x;
+        targetY = gMeasure.topY;
+      }
+    }
+
+    if (targetSvg) {
+      const scrollContainer = scrollContainerRef.current;
+      const pt = targetSvg.createSVGPoint();
+      pt.x = targetX;
+      pt.y = targetY;
+      const ctm = targetSvg.getScreenCTM();
+      if (ctm) {
+        const screenPt = pt.matrixTransform(ctm);
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const idealScreenTop = containerRect.top + 80;
+        const scrollDiff = screenPt.y - idealScreenTop;
+        scrollContainer.scrollBy({
+          top: scrollDiff,
+          behavior: 'smooth',
+        });
+      }
+    }
+  }, [playbackState.loopRange, getGraphicMeasure]);
+
+  const scrollToInPointRef = useRef(scrollToInPoint);
+  scrollToInPointRef.current = scrollToInPoint;
+
+  // Scroll to loop IN point when triggered from outside (e.g. clicking loop bookmark)
+  useEffect(() => {
+    if (scrollToLoopTrigger) {
+      const timer = setTimeout(() => {
+        scrollToInPoint();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [scrollToLoopTrigger, scrollToInPoint]);
 
 
   // Listen to playback state & synchronize cues from single source of truth
@@ -129,6 +202,12 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         const svgPages = containerRef.current.querySelectorAll('svg[id*="osmdSvgPage"], svg');
         const pageCount = svgPages.length || 1;
         onRenderCompleteRef.current({ totalPages: pageCount });
+      }
+
+      if (audioPlaybackService.getLoopRange()) {
+        setTimeout(() => {
+          scrollToInPointRef.current?.();
+        }, 100);
       }
     } catch (err: any) {
       console.error('Failed to render MusicXML score:', err);
