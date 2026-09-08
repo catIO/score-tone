@@ -5,6 +5,7 @@ interface ViewerSideRailProps {
   onToggleBookmarks: () => void;
   bookmarksCount: number;
   isCurrentPageBookmarked: boolean;
+  isCurrentLoopBookmarked?: boolean;
   isDisplayOpen: boolean;
   onToggleDisplay: () => void;
   isSettingsOpen: boolean;
@@ -20,6 +21,7 @@ export const ViewerSideRail: React.FC<ViewerSideRailProps> = ({
   onToggleBookmarks,
   bookmarksCount,
   isCurrentPageBookmarked,
+  isCurrentLoopBookmarked = false,
   isDisplayOpen,
   onToggleDisplay,
   isSettingsOpen,
@@ -58,13 +60,13 @@ export const ViewerSideRail: React.FC<ViewerSideRailProps> = ({
           style={{
             width: 40,
             height: 40,
-            color: isBookmarksOpen ? 'var(--md-on-primary-container)' : isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+            color: isBookmarksOpen ? 'var(--md-on-primary-container)' : isCurrentLoopBookmarked ? '#fb923c' : isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
           }}
         >
           <span
             className="material-symbols-outlined text-[20px] leading-none"
             style={{
-              fontVariationSettings: isCurrentPageBookmarked || isBookmarksOpen ? "'FILL' 1" : "'FILL' 0",
+              fontVariationSettings: isCurrentLoopBookmarked || isCurrentPageBookmarked || isBookmarksOpen ? "'FILL' 1" : "'FILL' 0",
             }}
           >
             bookmark
@@ -79,8 +81,8 @@ export const ViewerSideRail: React.FC<ViewerSideRailProps> = ({
               minWidth: 16,
               height: 16,
               padding: '0 4px',
-              background: isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-surface-3)',
-              color: isCurrentPageBookmarked ? 'var(--md-on-primary)' : 'var(--md-on-surface)',
+              background: isCurrentLoopBookmarked ? '#ea580c' : isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-surface-3)',
+              color: (isCurrentLoopBookmarked || isCurrentPageBookmarked) ? '#ffffff' : 'var(--md-on-surface)',
               border: '1px solid var(--md-outline-variant)',
               lineHeight: 1,
             }}

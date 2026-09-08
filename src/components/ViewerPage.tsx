@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Loader2, AlertTriangle, ArrowLeft, Repeat } from 'lucide-react';
 import type { ScoreFile, Bookmark } from '../services/storageService';
 import { storageService, isMusicXmlFile } from '../services/storageService';
 import type { AppSettings, FilterSettings } from '../services/settingsService';
@@ -64,6 +64,26 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const isCurrentPageBookmarked = (file.bookmarks || []).some(
     bm => bm.page === currentPage && bm.type !== 'loop'
   );
+
+  const activeLoopRange = playbackState.loopRange;
+  const isLoopActive = Boolean(
+    isMusicXml &&
+    activeLoopRange &&
+    (playbackState.loopEnabled || activeLoopRange.endMeasure !== undefined)
+  );
+
+  const currentLoopBookmark = isLoopActive && activeLoopRange
+    ? (file.bookmarks || []).find(
+        bm =>
+          bm.type === 'loop' &&
+          bm.loopRange &&
+          Math.abs(bm.loopRange.startBeat - activeLoopRange.startBeat) < 0.05 &&
+          Math.abs(bm.loopRange.endBeat - activeLoopRange.endBeat) < 0.05
+      )
+    : undefined;
+
+  const isCurrentLoopBookmarked = Boolean(currentLoopBookmark);
+
   const bookmarksCount = (file.bookmarks || []).length;
   const isAnyPanelOpen = isBookmarksOpen || isDisplayOpen || isSettingsOpen;
 
@@ -767,6 +787,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         }}
         bookmarksCount={bookmarksCount}
         isCurrentPageBookmarked={isCurrentPageBookmarked}
+        isCurrentLoopBookmarked={isCurrentLoopBookmarked}
         isDisplayOpen={isDisplayOpen}
         onToggleDisplay={() => {
           setIsDisplayOpen(p => !p);
@@ -815,12 +836,38 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             <span className="text-[11px] font-bold tracking-wide">P. {currentPage}</span>
           </button>
         )}
+
+        {/* Discreet loop bookmark indicator ribbon when active loop is bookmarked */}
+        {isCurrentLoopBookmarked && currentLoopBookmark && (
+          <button
+            onClick={() => {
+              setIsBookmarksOpen(true);
+              setIsDisplayOpen(false);
+              setIsSettingsOpen(false);
+            }}
+            className="absolute top-2 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95"
+            style={{
+              right: isCurrentPageBookmarked ? 96 : 16,
+              background: 'rgba(234, 88, 12, 0.22)',
+              border: '1px solid rgba(234, 88, 12, 0.5)',
+              backdropFilter: 'blur(8px)',
+              color: '#fb923c',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+            }}
+            title={`Loop "${currentLoopBookmark.name}" is bookmarked — click to view bookmarks`}
+          >
+            <Repeat className="w-3.5 h-3.5 text-orange-400" />
+            <span className="text-[11px] font-bold tracking-wide">{currentLoopBookmark.name}</span>
+          </button>
+        )}
         <div style={tintStyle} />
         <div className="w-full h-full" style={{ filter: cssFilterString, transition: 'filter 150ms' }}>
           {isMusicXml && xmlContent ? (
             <MusicXmlViewer
               xmlContent={xmlContent}
               zoom={zoom}
+              currentPage={currentPage}
+              onPageChange={handlePageChange}
               scrollToLoopTrigger={scrollToLoopTrigger}
               onRenderComplete={({ totalPages: pages }) => {
                 setTotalPages(Math.max(1, pages));
@@ -925,7 +972,9 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           backdropFilter: 'none',
         }}
       >
-        {currentPage} / {totalPages}
+        {!isMusicXml && appSettings.twoPageLandscape && appSettings.scrollMode === 'single' && (containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : window.innerWidth > window.innerHeight) && currentPage + 1 <= totalPages
+          ? `${currentPage}–${currentPage + 1} / ${totalPages}`
+          : `${currentPage} / ${totalPages}`}
       </div>
     </div>
   );

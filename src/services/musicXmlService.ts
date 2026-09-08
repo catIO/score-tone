@@ -131,10 +131,8 @@ export function normalizeMusicXmlForOsmd(xml: string): string {
     return `<forward><duration>${duration}</duration></forward>`;
   });
 
-  // 3. Let renderer decide layout instead of rigid hardcoded XML page breaks
-  cleanXml = cleanXml
-    .replace(/new-page\s*=\s*["']yes["']/gi, 'new-page="no"')
-    .replace(/new-system\s*=\s*["']yes["']/gi, 'new-system="no"');
+  // 3. Preserve XML page breaks while allowing flexible system width
+  cleanXml = cleanXml.replace(/new-system\s*=\s*["']yes["']/gi, 'new-system="no"');
 
   // 4. Remove empty <notations></notations> or empty <ornaments/> which can trigger OSMD errors
   cleanXml = cleanXml.replace(/<notations>\s*<\/notations>/gi, '');

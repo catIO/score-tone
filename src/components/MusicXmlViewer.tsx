@@ -13,6 +13,8 @@ declare global {
 interface MusicXmlViewerProps {
   xmlContent: string;
   zoom: number;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
   onRenderComplete?: (metadata: { totalPages: number }) => void;
   scrollToLoopTrigger?: number;
 }
@@ -20,6 +22,8 @@ interface MusicXmlViewerProps {
 export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   xmlContent,
   zoom,
+  currentPage = 1,
+  onPageChange,
   onRenderComplete,
   scrollToLoopTrigger,
 }) => {
@@ -168,8 +172,8 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         drawComposer: true,
         drawMeasureNumbers: true,
         drawCredits: true,
-        newSystemFromXML: false,
-        newPageFromXML: false,
+        newSystemFromXML: true,
+        newPageFromXML: true,
       });
 
       osmdRef.current = osmd;
@@ -181,8 +185,9 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       osmd.render();
 
       const svgs = containerRef.current.querySelectorAll('svg');
-      svgs.forEach((svg: SVGElement) => {
+      svgs.forEach((svg: SVGElement, idx: number) => {
         svg.style.backgroundColor = '#ffffff';
+        svg.setAttribute('data-page', String(idx + 1));
       });
 
       if (osmd.cursor) {
@@ -199,8 +204,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       setLoading(false);
 
       if (onRenderCompleteRef.current) {
-        const svgPages = containerRef.current.querySelectorAll('svg[id*="osmdSvgPage"], svg');
-        const pageCount = svgPages.length || 1;
+        const pageCount = osmd.GraphicSheet?.MusicPages?.length || svgs.length || 1;
         onRenderCompleteRef.current({ totalPages: pageCount });
       }
 
@@ -229,11 +233,77 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         svgs?.forEach((svg: SVGElement) => {
           svg.style.backgroundColor = '#ffffff';
         });
+        if (onRenderCompleteRef.current && osmdRef.current.GraphicSheet?.MusicPages) {
+          onRenderCompleteRef.current({ totalPages: osmdRef.current.GraphicSheet.MusicPages.length });
+        }
       } catch (err) {
         console.warn('Error adjusting zoom on OSMD:', err);
       }
     }
   }, [zoom, loading]);
+
+  const lastScrolledPageRef = useRef<number>(currentPage);
+
+  // Synchronize visible page on scroll
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer || !onPageChange || loading) return;
+
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const svgs = containerRef.current?.querySelectorAll('svg');
+        if (!svgs || svgs.length === 0) return;
+
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const viewportCheckY = containerRect.top + Math.min(200, containerRect.height / 3);
+
+        let activePage = 1;
+        svgs.forEach((svg, idx) => {
+          const rect = svg.getBoundingClientRect();
+          if (rect.top <= viewportCheckY && rect.bottom >= viewportCheckY) {
+            activePage = idx + 1;
+          }
+        });
+
+        lastScrolledPageRef.current = activePage;
+        if (activePage !== currentPage) {
+          onPageChange(activePage);
+        }
+      });
+    };
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    // Run once after initial render/layout
+    const initialCheckTimer = setTimeout(handleScroll, 150);
+
+    return () => {
+      clearTimeout(initialCheckTimer);
+      scrollContainer.removeEventListener('scroll', handleScroll);
+    };
+  }, [loading, onPageChange, currentPage]);
+
+  // Scroll to page when currentPage changes externally (toolbar, jump input, bookmark)
+  useEffect(() => {
+    if (loading || !containerRef.current || !scrollContainerRef.current || !currentPage) return;
+    if (lastScrolledPageRef.current === currentPage) return;
+    lastScrolledPageRef.current = currentPage;
+
+    const svgs = containerRef.current.querySelectorAll('svg');
+    const targetSvg = svgs[currentPage - 1];
+    if (targetSvg) {
+      const containerRect = scrollContainerRef.current.getBoundingClientRect();
+      const svgRect = targetSvg.getBoundingClientRect();
+      const isAlreadyVisible = svgRect.top >= containerRect.top - 40 && svgRect.top <= containerRect.top + 80;
+      if (!isAlreadyVisible) {
+        targetSvg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [currentPage, loading]);
 
   // Real-time Visual Playback Tracking Line & Auto-Scroll (GPU-efficient DOM reuse)
   useEffect(() => {
@@ -308,6 +378,11 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
       const gMeasure = getGraphicMeasure(currentMeasureIndex + 1);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
+        const playbackPage = gMeasure.pageIndex + 1;
+        if (isPlaying && onPageChange && playbackPage !== currentPage) {
+          lastScrolledPageRef.current = playbackPage;
+          onPageChange(playbackPage);
+        }
         const activeSvg = svgs[gMeasure.pageIndex];
         const measureDuration = Math.max(0.001, measureEndBeat - measureStartBeat);
         const progress = Math.max(0, Math.min(1, (currentBeat - measureStartBeat) / measureDuration));
@@ -685,6 +760,12 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     const note = findClosestGraphicNote(clickX, clickY, pageIndex);
     if (!note) return;
 
+    const clickedPage = pageIndex + 1;
+    if (onPageChange && clickedPage !== currentPage) {
+      lastScrolledPageRef.current = clickedPage;
+      onPageChange(clickedPage);
+    }
+
     if (e.shiftKey && playbackState.loopRange?.startBeat !== undefined) {
       // Shift+Click: Set OUT point at this note and activate loop
       const startBeat = playbackState.loopRange.startBeat;
@@ -714,7 +795,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       });
       audioPlaybackService.seek(note.timeInBeats);
     }
-  }, [playbackState.loopRange, findClosestGraphicNote]);
+  }, [playbackState.loopRange, findClosestGraphicNote, onPageChange, currentPage]);
 
   return (
     <div
