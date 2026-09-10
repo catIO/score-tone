@@ -172,11 +172,16 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         drawComposer: true,
         drawMeasureNumbers: true,
         drawCredits: true,
-        newSystemFromXML: true,
+        newSystemFromXML: false,
         newPageFromXML: true,
       });
 
       osmdRef.current = osmd;
+
+      // Keep measures spacious: max 3 measures per line avoids cramped 16th-note systems
+      if (osmd.rules) {
+        osmd.rules.RenderXMeasuresPerLineAkaSystem = 3;
+      }
 
       const cleanXml = normalizeMusicXmlForOsmd(xmlContent);
       await osmd.load(cleanXml);

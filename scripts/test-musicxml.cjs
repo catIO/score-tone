@@ -21,7 +21,8 @@ function normalizeMusicXmlForOsmd(xml) {
 
   // 2. Remove empty <notations></notations> or empty <ornaments/> which can trigger OSMD errors
   cleanXml = cleanXml.replace(/<notations>\s*<\/notations>/gi, '');
-  cleanXml = cleanXml.replace(/<ornaments>\s*<\/ornaments>/gi, '');
+  // 3. Allow dynamic system wrapping
+  cleanXml = cleanXml.replace(/new-system\s*=\s*["']yes["']/gi, 'new-system="no"');
 
   // 3. Fix stray <alter> elements that are not inside <pitch>
   cleanXml = cleanXml.replace(/(<note[^>]*>)([\s\S]*?)(<\/note>)/gi, (fullNote, start, inner, end) => {
@@ -49,10 +50,11 @@ function computeLoopWrap(currentBeat, loopStartBeat, loopEndBeat) {
 }
 
 console.log('🧪 Testing normalizeMusicXmlForOsmd...');
-const sampleXml = '<note print-object="no"><rest/><duration>4</duration></note><notations></notations>';
+const sampleXml = '<note print-object="no"><rest/><duration>4</duration></note><notations></notations><print new-system="yes"/>';
 const normalized = normalizeMusicXmlForOsmd(sampleXml);
 assert.ok(normalized.includes('<forward><duration>4</duration></forward>'), 'Hidden rest conversion failed');
 assert.ok(!normalized.includes('<notations></notations>'), 'Empty notations removal failed');
+assert.ok(normalized.includes('new-system="no"'), 'new-system should normalize to "no" to allow responsive dynamic system wrapping');
 console.log('✅ normalizeMusicXmlForOsmd passed!');
 
 console.log('🧪 Testing isMusicXmlFile...');
