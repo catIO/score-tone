@@ -5500,12 +5500,12 @@
         drawComposer: true,
         drawMeasureNumbers: true,
         drawCredits: true,
-        newSystemFromXML: false,
+        newSystemFromXML: true,
         newPageFromXML: true,
       });
 
       let cleanXml = xml;
-      if (!false) {
+      if (!true) {
         cleanXml = cleanXml.replace(/new-system\s*=\s*["']yes["']/gi, 'new-system="no"');
       }
 
