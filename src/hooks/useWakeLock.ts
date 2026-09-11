@@ -29,6 +29,7 @@ export async function forceReleaseWakeLock(): Promise<void> {
 
 // Global safety listener: release lock if entire window/page hides or unloads
 if (typeof window !== 'undefined') {
+  (window as any).releaseWakeLock = forceReleaseWakeLock;
   window.addEventListener('pagehide', () => {
     forceReleaseWakeLock().catch(() => {});
   });

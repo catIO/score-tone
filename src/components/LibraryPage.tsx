@@ -1047,20 +1047,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                             <button
                               key={bm.id}
                               onClick={(e) => handleBookmarkClick(file, bm, e)}
-                              className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 max-w-full truncate"
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 max-w-full truncate"
                               style={{
-                                background: isLoop ? 'rgba(234, 88, 12, 0.14)' : 'rgba(255, 183, 77, 0.14)',
-                                color: isLoop ? '#c2410c' : 'var(--md-primary)',
-                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid var(--md-outline-variant)'
+                                background: isLoop ? 'var(--md-loop-bg)' : 'var(--md-bookmark-bg)',
+                                color: isLoop ? 'var(--md-loop-text)' : 'var(--md-bookmark-text)',
+                                border: `1px solid ${isLoop ? 'var(--md-loop-border)' : 'var(--md-bookmark-border)'}`
                               }}
                               title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
                             >
                               {isLoop ? <Repeat className="w-2.5 h-2.5 shrink-0" /> : <BookmarkIcon className="w-2.5 h-2.5 shrink-0 fill-current" />}
                               <span className="truncate">{bm.name}</span>
                               {loopMeasures && !alreadyHasMeasuresInName ? (
-                                <span className="opacity-70 font-normal shrink-0">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
+                                <span className="opacity-90 font-medium shrink-0">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
                               ) : !isLoop ? (
-                                <span className="opacity-60 font-normal shrink-0">(p.{bm.page})</span>
+                                <span className="opacity-85 font-medium shrink-0">(p.{bm.page})</span>
                               ) : null}
                             </button>
                           );
@@ -1161,11 +1161,11 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                             <button
                               key={bm.id}
                               onClick={(e) => handleBookmarkClick(file, bm, e)}
-                              className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
                               style={{
-                                background: isLoop ? 'rgba(234, 88, 12, 0.14)' : 'rgba(255, 183, 77, 0.14)',
-                                color: isLoop ? '#c2410c' : 'var(--md-primary)',
-                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid var(--md-outline-variant)'
+                                background: isLoop ? 'var(--md-loop-bg)' : 'var(--md-bookmark-bg)',
+                                color: isLoop ? 'var(--md-loop-text)' : 'var(--md-bookmark-text)',
+                                border: `1px solid ${isLoop ? 'var(--md-loop-border)' : 'var(--md-bookmark-border)'}`
                               }}
                               title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
                             >
@@ -1176,9 +1176,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                               )}
                               {bm.name}
                               {loopMeasures && !alreadyHasMeasuresInName ? (
-                                <span className="opacity-70 font-normal">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
+                                <span className="opacity-90 font-medium">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
                               ) : !isLoop ? (
-                                <span className="opacity-60 font-normal">(p.{bm.page})</span>
+                                <span className="opacity-85 font-medium">(p.{bm.page})</span>
                               ) : null}
                             </button>
                           );

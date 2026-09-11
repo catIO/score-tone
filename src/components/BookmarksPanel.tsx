@@ -356,10 +356,10 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                   padding: '10px 12px',
                   borderRadius: 10,
                   background: isSelected
-                    ? (isLoop ? 'rgba(234, 88, 12, 0.18)' : 'var(--md-primary-container)')
+                    ? (isLoop ? 'var(--md-loop-bg)' : 'var(--md-primary-container)')
                     : 'var(--md-surface-3)',
                   border: isSelected
-                    ? (isLoop ? '1px solid #ea580c' : '1px solid var(--md-primary)')
+                    ? (isLoop ? '1px solid var(--md-loop-border)' : '1px solid var(--md-primary)')
                     : '1px solid transparent',
                   cursor: 'pointer',
                   transition: 'all 150ms ease',
@@ -373,13 +373,13 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                       width: 22,
                       height: 22,
                       borderRadius: 6,
-                      background: 'rgba(234, 88, 12, 0.18)',
+                      background: 'var(--md-loop-bg)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0
                     }}>
-                      <Repeat className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
+                      <Repeat className="w-3.5 h-3.5" style={{ color: 'var(--md-loop-text)' }} />
                     </div>
                   ) : (
                     <div style={{
@@ -402,7 +402,7 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                       fontSize: 13,
                       fontWeight: 600,
                       color: isSelected
-                        ? (isLoop ? '#9a3412' : 'var(--md-on-primary-container)')
+                        ? (isLoop ? 'var(--md-loop-text)' : 'var(--md-on-primary-container)')
                         : 'var(--md-on-surface)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
@@ -415,7 +415,7 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                         <span style={{
                           fontSize: 10,
                           fontWeight: 600,
-                          color: isSelected ? '#7c2d12' : 'var(--md-on-surface-variant)',
+                          color: isSelected ? 'var(--md-loop-text)' : 'var(--md-on-surface-variant)',
                           opacity: 0.95
                         }}>
                           {bm.loopRange.startMeasure && bm.loopRange.endMeasure
