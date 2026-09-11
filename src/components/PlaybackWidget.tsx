@@ -69,11 +69,20 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
   const isLoopActive = playbackState.loopEnabled;
 
   return (
-    <div className="relative inline-flex items-center gap-1 bg-[#1a1a24] border border-[#2e2e3e] rounded-xl px-1.5 py-1 shadow-md select-none" ref={popoverRef}>
+    <div
+      className="relative inline-flex items-center gap-1 rounded-xl px-1.5 py-1 shadow-sm select-none border transition-colors"
+      style={{
+        background: 'var(--md-surface-2)',
+        borderColor: 'var(--md-outline-variant)',
+        color: 'var(--md-on-surface)',
+      }}
+      ref={popoverRef}
+    >
       {/* Rewind Button: In loop mode -> go to IN point; in normal mode -> go to beginning */}
       <button
         onClick={onRewind}
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 active:bg-white/20 transition-all focus:outline-none"
+        className="w-8 h-8 rounded-lg flex items-center justify-center transition-all focus:outline-none hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/20"
+        style={{ color: 'var(--md-on-surface)' }}
         title={
           playbackState.loopRange
             ? `Go to In Point (m. ${playbackState.loopRange.startMeasure || '1'}) (R)`
@@ -87,7 +96,8 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
       {/* Play / Pause Toggle Button */}
       <button
         onClick={onTogglePlay}
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-200 hover:text-white hover:bg-white/10 active:bg-white/20 transition-all focus:outline-none"
+        className="w-8 h-8 rounded-lg flex items-center justify-center transition-all focus:outline-none hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/20"
+        style={{ color: 'var(--md-on-surface)' }}
         title={playbackState.isPlaying ? 'Pause (Space)' : 'Play (Space)'}
         aria-label={playbackState.isPlaying ? 'Pause' : 'Play'}
       >
@@ -103,11 +113,14 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
         onClick={onToggleLoop}
         className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all focus:outline-none ${
           playbackState.loopPauseActive
-            ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50 shadow-sm animate-pulse'
+            ? 'bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/50 shadow-sm animate-pulse'
             : isLoopActive
-            ? 'bg-orange-500/25 text-orange-400 border border-orange-500/50 shadow-sm'
-            : 'text-slate-400 hover:text-white hover:bg-white/10'
+            ? 'bg-orange-500/20 text-orange-700 dark:text-orange-400 border border-orange-500/50 shadow-sm'
+            : 'hover:bg-black/5 dark:hover:bg-white/10'
         }`}
+        style={{
+          color: (!playbackState.loopPauseActive && !isLoopActive) ? 'var(--md-on-surface-variant)' : undefined
+        }}
         title={
           playbackState.loopPauseActive
             ? `Resting between loops: ${playbackState.loopPauseRemaining ?? 0}s remaining (L to toggle)`
@@ -118,7 +131,7 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
         aria-label="Toggle Loop Mode"
       >
         {playbackState.loopPauseActive ? (
-          <span className="font-mono font-bold text-xs tabular-nums text-amber-300">
+          <span className="font-mono font-bold text-xs tabular-nums text-amber-800 dark:text-amber-300">
             {playbackState.loopPauseRemaining ?? 0}
           </span>
         ) : (
@@ -131,15 +144,16 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all focus:outline-none ${
           isOpen
-            ? 'bg-white/15 text-white'
-            : 'text-slate-300 hover:text-white hover:bg-white/10'
+            ? 'bg-black/10 dark:bg-white/15'
+            : 'hover:bg-black/5 dark:hover:bg-white/10'
         }`}
+        style={{ color: 'var(--md-on-surface)' }}
         title="Tempo & Playback Settings"
         aria-expanded={isOpen}
       >
-        <span className="text-sm font-serif leading-none font-bold text-slate-300">♩</span>
+        <span className="text-sm font-serif leading-none font-bold" style={{ color: 'var(--md-primary)' }}>♩</span>
         <span className="tabular-nums font-mono text-xs">{playbackState.bpm}</span>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--md-on-surface-variant)' }} />
       </button>
 
       {/* Popover Card */}
@@ -154,29 +168,35 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
             }}
           />
           <div
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-72 sm:w-80 bg-[#16161d] border border-[#2f2f3d] rounded-2xl p-4 shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-100"
-            style={{ color: 'var(--md-on-surface, #e2e8f0)' }}
+            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-72 sm:w-80 rounded-2xl p-4 z-50 border transition-colors animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              background: 'var(--md-surface-1)',
+              borderColor: 'var(--md-outline-variant)',
+              color: 'var(--md-on-surface)',
+              boxShadow: 'var(--md-card-shadow-hover)',
+            }}
           >
           {/* Header */}
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
-            <span className="text-xs font-semibold tracking-wide uppercase text-slate-400 flex items-center gap-1.5">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b" style={{ borderColor: 'var(--md-outline-variant)' }}>
+            <span className="text-xs font-semibold tracking-wide uppercase flex items-center gap-1.5" style={{ color: 'var(--md-on-surface-variant)' }}>
               Tempo & Audio Settings
             </span>
-            <span className="text-xs font-mono font-bold text-orange-300">
+            <span className="text-xs font-mono font-bold text-orange-700 dark:text-orange-300">
               {playbackState.bpm} BPM
             </span>
           </div>
 
           {/* Tempo Controls */}
           <div className="mb-4">
-            <div className="flex items-center justify-between text-xs text-slate-300 mb-2">
+            <div className="flex items-center justify-between text-xs mb-2" style={{ color: 'var(--md-on-surface)' }}>
               <span>Tempo</span>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleBpmStep(-5)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 active:bg-white/20 text-slate-200 font-bold flex items-center justify-center transition-colors text-sm"
+                className="w-8 h-8 rounded-lg bg-black/[0.04] dark:bg-white/5 hover:bg-black/[0.08] dark:hover:bg-white/15 active:bg-black/15 dark:active:bg-white/20 font-bold flex items-center justify-center transition-colors text-sm"
+                style={{ color: 'var(--md-on-surface)' }}
                 title="−5 BPM"
               >
                 −
@@ -187,11 +207,12 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                 max="240"
                 value={playbackState.bpm}
                 onChange={(e) => onBpmChange(parseInt(e.target.value, 10))}
-                className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                className="flex-1 h-2 bg-black/10 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-600 dark:accent-orange-500"
               />
               <button
                 onClick={() => handleBpmStep(5)}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 active:bg-white/20 text-slate-200 font-bold flex items-center justify-center transition-colors text-sm"
+                className="w-8 h-8 rounded-lg bg-black/[0.04] dark:bg-white/5 hover:bg-black/[0.08] dark:hover:bg-white/15 active:bg-black/15 dark:active:bg-white/20 font-bold flex items-center justify-center transition-colors text-sm"
+                style={{ color: 'var(--md-on-surface)' }}
                 title="+5 BPM"
               >
                 +
@@ -206,7 +227,8 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                   <button
                     key={multiplier}
                     onClick={() => onBpmChange(calculatedBpm)}
-                    className="py-1 px-1.5 text-[10px] font-medium rounded-md bg-white/5 hover:bg-white/10 text-slate-300 transition-colors text-center"
+                    className="py-1 px-1.5 text-[10px] font-medium rounded-md bg-black/[0.04] dark:bg-white/5 hover:bg-black/[0.08] dark:hover:bg-white/10 transition-colors text-center"
+                    style={{ color: 'var(--md-on-surface)' }}
                   >
                     {multiplier}x
                   </button>
@@ -216,21 +238,22 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
           </div>
 
           {/* Volume Control */}
-          <div className="mb-4 pt-3 border-t border-white/10">
-            <div className="flex items-center justify-between text-xs text-slate-300 mb-2">
+          <div className="mb-4 pt-3 border-t" style={{ borderColor: 'var(--md-outline-variant)' }}>
+            <div className="flex items-center justify-between text-xs mb-2" style={{ color: 'var(--md-on-surface)' }}>
               <span className="flex items-center gap-1">
-                {playbackState.volume === 0 ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-slate-400" />}
+                {playbackState.volume === 0 ? <VolumeX className="w-3.5 h-3.5 text-rose-500" /> : <Volume2 className="w-3.5 h-3.5" style={{ color: 'var(--md-on-surface-variant)' }} />}
                 Volume
               </span>
-              <span className="text-xs text-slate-400 font-mono">{playbackState.volume}%</span>
+              <span className="text-xs font-mono" style={{ color: 'var(--md-on-surface-variant)' }}>{playbackState.volume}%</span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleMuteToggle}
-                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 flex items-center justify-center"
+                className="w-8 h-8 rounded-lg bg-black/[0.04] dark:bg-white/5 hover:bg-black/[0.08] dark:hover:bg-white/15 flex items-center justify-center"
+                style={{ color: 'var(--md-on-surface)' }}
                 title={playbackState.volume === 0 ? 'Unmute' : 'Mute'}
               >
-                {playbackState.volume === 0 ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
+                {playbackState.volume === 0 ? <VolumeX className="w-4 h-4 text-rose-500" /> : <Volume2 className="w-4 h-4" />}
               </button>
               <input
                 type="range"
@@ -238,15 +261,15 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                 max="100"
                 value={playbackState.volume}
                 onChange={(e) => onVolumeChange(parseInt(e.target.value, 10))}
-                className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                className="flex-1 h-2 bg-black/10 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-600 dark:accent-orange-500"
               />
             </div>
           </div>
 
           {/* Count-In Toggle */}
-          <div className="pt-2 border-t border-white/10 flex items-center justify-between">
-            <label htmlFor="countInToggle" className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
+          <div className="pt-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--md-outline-variant)' }}>
+            <label htmlFor="countInToggle" className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--md-on-surface)' }}>
+              <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
               <span>1-Bar Count-In Metronome</span>
             </label>
             <input
@@ -254,15 +277,15 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
               type="checkbox"
               checked={countInEnabled}
               onChange={(e) => onToggleCountIn(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-600 text-orange-600 focus:ring-orange-500 bg-slate-700 cursor-pointer accent-orange-500"
+              className="w-4 h-4 rounded cursor-pointer accent-orange-600 dark:accent-orange-500"
             />
           </div>
 
           {/* Pause Before Next Loop (Loop Mode) */}
-          <div className="pt-3 mt-3 border-t border-white/10">
+          <div className="pt-3 mt-3 border-t" style={{ borderColor: 'var(--md-outline-variant)' }}>
             <div className="flex items-center justify-between">
-              <label htmlFor="loopPauseToggle" className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                <Brain className="w-3.5 h-3.5 text-amber-400" />
+              <label htmlFor="loopPauseToggle" className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--md-on-surface)' }}>
+                <Brain className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 <span>Pause Between Loops</span>
               </label>
               <input
@@ -273,15 +296,15 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                   const nextVal = e.target.checked ? (lastNonZeroPauseRef.current || 8) : 0;
                   onLoopPauseSecondsChange?.(nextVal);
                 }}
-                className="w-4 h-4 rounded border-slate-600 text-orange-600 focus:ring-orange-500 bg-slate-700 cursor-pointer accent-orange-500"
+                className="w-4 h-4 rounded cursor-pointer accent-orange-600 dark:accent-orange-500"
               />
             </div>
 
             {effectiveLoopPauseSec > 0 && (
-              <div className="mt-2.5 pt-2 border-t border-white/5 space-y-2">
-                <div className="flex items-center justify-between text-xs text-slate-300">
-                  <span className="text-[11px] text-slate-400">Pause duration</span>
-                  <span className="text-xs font-mono font-bold text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded border border-amber-500/30">
+              <div className="mt-2.5 pt-2 border-t space-y-2" style={{ borderColor: 'var(--md-outline-variant)' }}>
+                <div className="flex items-center justify-between text-xs" style={{ color: 'var(--md-on-surface)' }}>
+                  <span className="text-[11px]" style={{ color: 'var(--md-on-surface-variant)' }}>Pause duration</span>
+                  <span className="text-xs font-mono font-bold text-amber-800 dark:text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded border border-amber-500/30">
                     {effectiveLoopPauseSec}s
                   </span>
                 </div>
@@ -298,7 +321,7 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                       lastNonZeroPauseRef.current = val;
                       onLoopPauseSecondsChange?.(val);
                     }}
-                    className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                    className="flex-1 h-2 bg-black/10 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-600 dark:accent-orange-500"
                   />
                 </div>
 
@@ -318,12 +341,15 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                       }}
                       className={`py-1.5 px-1 rounded-lg font-medium transition-all flex flex-col items-center gap-0.5 ${
                         effectiveLoopPauseSec === sec
-                          ? 'bg-amber-500/25 text-amber-200 border border-amber-500/50 shadow-sm'
-                          : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-slate-200 border border-transparent'
+                          ? 'bg-amber-500/25 text-amber-900 dark:text-amber-200 border border-amber-500/50 shadow-sm'
+                          : 'bg-black/[0.04] dark:bg-white/5 hover:bg-black/[0.08] dark:hover:bg-white/10 border border-transparent'
                       }`}
+                      style={{
+                        color: effectiveLoopPauseSec === sec ? undefined : 'var(--md-on-surface-variant)'
+                      }}
                     >
                       <span className="font-bold text-xs">{label}</span>
-                      <span className={`text-[8px] uppercase tracking-wider ${recommended ? 'text-amber-300 font-bold' : 'text-slate-400'}`}>
+                      <span className={`text-[8px] uppercase tracking-wider ${recommended ? 'text-amber-700 dark:text-amber-300 font-bold' : ''}`}>
                         {tag}{recommended ? ' ★' : ''}
                       </span>
                     </button>
@@ -331,10 +357,10 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
                 </div>
 
                 {/* Optimal Brain Performance Callout */}
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] leading-relaxed text-amber-200/90 flex items-start gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] leading-relaxed text-amber-950 dark:text-amber-200/90 flex items-start gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-semibold text-amber-200">Optimal Brain Performance (5–10s): </span>
+                    <span className="font-semibold text-amber-900 dark:text-amber-200">Optimal Brain Performance (5–10s): </span>
                     Cognitive neuroscience shows a 5–10s micro-rest between practice reps triggers fast-forward neural replay in the hippocampus and motor cortex—cementing muscle memory while releasing physical tension.
                   </div>
                 </div>

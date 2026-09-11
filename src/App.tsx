@@ -6,15 +6,33 @@ import { storageService, type ScoreFile } from './services/storageService';
 import { googleDriveService } from './services/googleDriveService';
 import { Loader2, AlertCircle } from 'lucide-react';
 import UpdatePrompt from './components/UpdatePrompt';
+import { forceReleaseWakeLock } from './hooks/useWakeLock';
 
 export const App: React.FC = () => {
   const [activePage, setActivePage] = useState<'library' | 'viewer'>('library');
   const [activeFile, setActiveFile] = useState<ScoreFile | null>(null);
   const [inMemoryBlob, setInMemoryBlob] = useState<Blob | undefined>(undefined);
   const [appSettings, setAppSettings] = useState<AppSettings>(settingsService.getSettings());
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    return appSettings.theme || settingsService.getTheme() || 'dark';
+  });
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [silentAuthPending, setSilentAuthPending] = useState(false);
+
+  // Sync theme attribute & class with document root
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }, [theme]);
+
+  const handleToggleTheme = () => {
+    const nextTheme: 'dark' | 'light' = theme === 'dark' ? 'light' : 'dark';
+    setTheme(nextTheme);
+    const updated: AppSettings = { ...appSettings, theme: nextTheme };
+    setAppSettings(updated);
+    settingsService.saveSettings(updated);
+  };
 
   // Pending deep-link: stored until user clicks a button (needed for popup unblock)
   const [pendingLink, setPendingLink] = useState<{ driveId: string; name: string } | null>(null);
@@ -105,6 +123,7 @@ export const App: React.FC = () => {
         console.error('[ScoreTone] Failed to parse URL parameters', e);
       }
     } else {
+      forceReleaseWakeLock().catch(() => {});
       setActivePage('library');
       setActiveFile(null);
       setInMemoryBlob(undefined);
@@ -198,6 +217,9 @@ export const App: React.FC = () => {
 
   const handleSettingsChange = (newSettings: AppSettings) => {
     setAppSettings(newSettings);
+    if (newSettings.theme && newSettings.theme !== theme) {
+      setTheme(newSettings.theme);
+    }
     settingsService.saveSettings(newSettings);
   };
 
@@ -246,6 +268,8 @@ export const App: React.FC = () => {
   };
 
   const handleBackToLibrary = () => {
+    // Explicitly release screen wake lock whenever exiting the score viewer
+    forceReleaseWakeLock().catch(() => {});
     setActivePage('library');
     setActiveFile(null);
     setInMemoryBlob(undefined);
@@ -256,6 +280,13 @@ export const App: React.FC = () => {
       window.history.pushState({ page: 'library' }, '', window.location.origin);
     }
   };
+
+  // Guarantee that wake lock is strictly released whenever the user is on the library page
+  useEffect(() => {
+    if (activePage === 'library') {
+      forceReleaseWakeLock().catch(() => {});
+    }
+  }, [activePage]);
 
   // Loading spinner while downloading PWA assets or importing
   if (importing || silentAuthPending) {
@@ -354,7 +385,11 @@ export const App: React.FC = () => {
       )}
 
       {activePage === 'library' ? (
-        <LibraryPage onOpenFile={handleOpenFile} />
+        <LibraryPage
+          onOpenFile={handleOpenFile}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
       ) : (
         activeFile && (
           <ViewerPage

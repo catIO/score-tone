@@ -199,6 +199,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
                   startMeasure: startM,
                   endMeasure: endM,
                 }, targetBpm);
+                setScrollToLoopTrigger(Date.now());
               }
             }
 

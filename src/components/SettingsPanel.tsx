@@ -177,7 +177,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           <div style={{ minWidth: 0 }}>
             <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--md-on-surface)', marginBottom: 2 }}>Keep Screen Awake</p>
             <p style={{ fontSize: 11, color: 'var(--md-on-surface-variant)' }}>
-              Prevent screen timeout while reading a score
+              Prevent screen timeout while viewing a score (releases in library)
             </p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>

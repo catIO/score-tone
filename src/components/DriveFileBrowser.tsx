@@ -115,19 +115,21 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
         <form onSubmit={handleSearchSubmit} className="px-4 pt-4 pb-2">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
             style={{ background: 'var(--md-surface-2)', border: '1px solid var(--md-outline-variant)' }}>
-            <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <Search className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--md-on-surface-variant)' }} />
             <input
               type="text"
               placeholder="Search scores by name..."
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              className="flex-1 bg-transparent text-sm text-white focus:outline-none placeholder-slate-500"
+              className="flex-1 bg-transparent text-sm focus:outline-none placeholder-[var(--md-on-surface-variant)]"
+              style={{ color: 'var(--md-on-surface)' }}
             />
             {searchInput && (
               <button
                 type="button"
                 onClick={() => { setSearchInput(''); setActiveSearch(''); loadFiles(''); }}
-                className="text-xs text-slate-400 hover:text-white"
+                className="text-xs transition-colors hover:opacity-100 opacity-70"
+                style={{ color: 'var(--md-on-surface-variant)' }}
               >
                 Clear
               </button>

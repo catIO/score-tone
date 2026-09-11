@@ -14,6 +14,13 @@ export interface GoogleDriveFileMetadata {
   thumbnailLink?: string;
 }
 
+export interface GoogleUserProfile {
+  name?: string;
+  given_name?: string;
+  email?: string;
+  picture?: string;
+}
+
 let accessToken: string | null = null;
 let tokenClient: any = null;
 let tokenExpiresAt: number | null = null;
@@ -24,6 +31,7 @@ let authInFlight: Promise<string> | null = null; // deduplicate concurrent getAc
 const TOKEN_KEY = 'scoretone_google_token';
 const EXPIRES_KEY = 'scoretone_google_token_expires';
 const LOGIN_HINT_KEY = 'scoretone_google_login_hint';
+const USER_PROFILE_KEY = 'scoretone_google_user_profile';
 
 function isTokenExpiringSoon(bufferMs = 3 * 60 * 1000): boolean {
   if (!tokenExpiresAt) return true;
@@ -179,7 +187,7 @@ export const googleDriveService = {
       // Always (re-)initialize so the callback is fresh
       tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
         callback: (response: any) => {
           if (response.error) {
             onError(response);
@@ -206,20 +214,29 @@ export const googleDriveService = {
             console.warn('[ScoreTone] Failed to save token to localStorage', e);
           }
 
-          // Fetch the user's email so future silent refreshes can skip the account picker
-          if (!loginHint) {
-            fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-              headers: { Authorization: `Bearer ${response.access_token}` }
-            })
-              .then(r => r.ok ? r.json() : null)
-              .then(info => {
-                if (info?.email) {
+          // Fetch user profile info (name, email, avatar)
+          fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${response.access_token}` }
+          })
+            .then(r => r.ok ? r.json() : null)
+            .then(info => {
+              if (info) {
+                if (info.email) {
                   loginHint = info.email;
                   try { localStorage.setItem(LOGIN_HINT_KEY, info.email); } catch { /* ignore */ }
                 }
-              })
-              .catch(() => { /* non-critical */ });
-          }
+                try {
+                  const profile: GoogleUserProfile = {
+                    name: info.name,
+                    given_name: info.given_name,
+                    email: info.email,
+                    picture: info.picture,
+                  };
+                  localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+                } catch { /* ignore */ }
+              }
+            })
+            .catch(() => { /* non-critical */ });
 
           onTokenFetched(response.access_token);
         },
@@ -587,8 +604,21 @@ export const googleDriveService = {
   logout(): void {
     clearStoredToken();
     loginHint = null;
-    try { localStorage.removeItem(LOGIN_HINT_KEY); } catch { /* ignore */ }
+    try {
+      localStorage.removeItem(LOGIN_HINT_KEY);
+      localStorage.removeItem(USER_PROFILE_KEY);
+    } catch { /* ignore */ }
     tokenClient = null;
+  },
+
+  // Get cached Google user profile (name, email, avatar picture)
+  getUserProfile(): GoogleUserProfile | null {
+    try {
+      const data = localStorage.getItem(USER_PROFILE_KEY);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
   }
 };
 

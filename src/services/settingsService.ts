@@ -10,6 +10,7 @@ export interface FilterSettings {
 }
 
 export interface AppSettings {
+  theme: 'dark' | 'light';
   lastPreset: string;
   customSliders: FilterSettings;
   fitMode: 'width' | 'height';
@@ -44,6 +45,7 @@ const SEPIA_FILTERS: FilterSettings = {
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
+  theme: 'dark',
   lastPreset: 'Sepia',
   customSliders: SEPIA_FILTERS,
   fitMode: 'width',
@@ -55,17 +57,25 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const STORAGE_KEY = 'scoretone_settings';
+const THEME_STORAGE_KEY = 'scoretone_theme';
 
 export const settingsService = {
   getSettings(): AppSettings {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
-      if (!data) return DEFAULT_SETTINGS;
+      const savedTheme = (localStorage.getItem(THEME_STORAGE_KEY) as 'dark' | 'light') || undefined;
+      if (!data) {
+        return {
+          ...DEFAULT_SETTINGS,
+          ...(savedTheme ? { theme: savedTheme } : {})
+        };
+      }
       const parsed = JSON.parse(data);
       // Merge with defaults to handle new keys in future releases
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
+        theme: savedTheme || parsed.theme || 'dark',
         customSliders: {
           ...SEPIA_FILTERS,
           ...parsed.customSliders
@@ -80,8 +90,27 @@ export const settingsService = {
   saveSettings(settings: AppSettings): void {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      if (settings.theme) {
+        localStorage.setItem(THEME_STORAGE_KEY, settings.theme);
+      }
     } catch (e) {
       console.error('Failed to save settings', e);
+    }
+  },
+
+  getTheme(): 'dark' | 'light' {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === 'light' || saved === 'dark') return saved;
+    return 'dark';
+  },
+
+  setTheme(theme: 'dark' | 'light'): void {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+      const current = this.getSettings();
+      this.saveSettings({ ...current, theme });
+    } catch (e) {
+      console.error('Failed to set theme', e);
     }
   },
 

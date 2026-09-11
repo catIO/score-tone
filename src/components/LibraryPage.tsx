@@ -1,25 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle,
-  CloudOff, X, Music, Repeat, Cloud, Info, BookOpen, Sliders, Play,
-  Bookmark as BookmarkIcon, LayoutGrid, List, Search, ArrowUpDown
+  CloudOff, X, Music, Repeat, BookOpen, Sliders, Play,
+  Bookmark as BookmarkIcon, LayoutGrid, List, Search, ArrowUpDown, Clock
 } from 'lucide-react';
 import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import HeaderBar, { type NavTab } from './HeaderBar';
 
 interface LibraryPageProps {
   onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number, queryParams?: Record<string, string>) => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
 }
 
-export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
+export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'dark', onToggleTheme }) => {
   const [files, setFiles] = useState<ScoreFile[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'local' | 'drive'>('all');
+  const [navTab, setNavTab] = useState<NavTab>('all');
+  const [subFilter, setSubFilter] = useState<'all' | 'offline' | 'recent'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('scoretone_view_mode') as 'grid' | 'list') || 'grid';
   });
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'recent' | 'name' | 'size' | 'bookmarks'>('recent');
+  const [sortBy, setSortBy] = useState<'recent' | 'name' | 'size'>('recent');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(false);
@@ -432,10 +436,36 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
   const formatDate = (ts: number) =>
     new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+  const stats = {
+    totalScores: files.length,
+    pdfCount: files.filter(f => !isMusicXmlFile(f)).length,
+    xmlCount: files.filter(f => isMusicXmlFile(f)).length,
+    driveCount: files.filter(f => f.source === 'google-drive').length,
+    offlineCount: files.filter(f => f.offline).length,
+  };
+
+  const getSectionTitle = () => {
+    switch (navTab) {
+      case 'pdf': return 'PDF Scores';
+      case 'musicxml': return 'MusicXML Scores';
+      case 'drive': return 'Google Drive Scores';
+      default: return 'All Scores';
+    }
+  };
+
   const filteredFiles = files
     .filter(f => {
-      if (activeTab === 'local') return f.source === 'local';
-      if (activeTab === 'drive') return f.source === 'google-drive';
+      if (navTab === 'pdf') return !isMusicXmlFile(f);
+      if (navTab === 'musicxml') return isMusicXmlFile(f);
+      if (navTab === 'drive') return f.source === 'google-drive';
+      return true;
+    })
+    .filter(f => {
+      if (subFilter === 'offline') return f.offline;
+      if (subFilter === 'recent') {
+        const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        return f.lastOpened >= sevenDaysAgo;
+      }
       return true;
     })
     .filter(f => {
@@ -452,23 +482,15 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       if (sortBy === 'size') {
         return (b.size || 0) - (a.size || 0);
       }
-      if (sortBy === 'bookmarks') {
-        return (b.bookmarks?.length || 0) - (a.bookmarks?.length || 0);
-      }
       // Default: 'recent'
       return b.lastOpened - a.lastOpened;
     });
-
-  const tabs: { key: typeof activeTab; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'local', label: 'Local' },
-    { key: 'drive', label: 'Drive' },
-  ];
 
   const renderShareDropdown = (file: ScoreFile, placement: 'top' | 'bottom' = 'bottom') => (
     <div
       ref={el => { if (el) shareMenuRefs.current.set(file.id, el); else shareMenuRefs.current.delete(file.id); }}
       className="relative"
+      style={{ zIndex: openShareId === file.id ? 50 : undefined }}
     >
       <button
         onClick={e => { e.stopPropagation(); setOpenShareId(id => id === file.id ? null : file.id); }}
@@ -544,106 +566,71 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml,text/plain,application/octet-stream,text/*"
         className="hidden"
       />
-      <div className="max-w-6xl mx-auto w-full px-4 py-6 md:px-8 md:py-8">
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            {/* Logo */}
-            <div className="relative">
-              <svg viewBox="0 -960 960 960" className="w-10 h-10 flex-shrink-0 drop-shadow-sm">
-                {/* Outer folder frames */}
-                <path
-                  d="M320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z"
-                  fill="currentColor"
-                  style={{ color: 'var(--md-on-surface-variant)' }}
-                />
-                {/* The note (amber yellow tint) */}
-                <path
-                  d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29Z"
-                  fill="#FFB300"
-                />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-                Score Tone
-              </h1>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
-                Your sheet music, in perfect light
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowGuideModal(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-full transition-all hover:bg-white/10 active:scale-95"
-              style={{
-                background: 'var(--md-surface-2)',
-                color: 'var(--md-primary)',
-                border: '1px solid var(--md-outline-variant)'
-              }}
-              title="App features & how to use"
-            >
-              <Info className="w-3.5 h-3.5" />
-              <span>How to Use</span>
-            </button>
-            <button
-              onClick={() => setShowAboutModal(true)}
-              className="text-xs font-semibold px-3.5 py-1.5 rounded-full transition-colors"
-              style={{
-                background: 'var(--md-surface-2)',
-                color: 'var(--md-on-surface-variant)',
-                border: '1px solid var(--md-outline-variant)'
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--md-surface-3)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'var(--md-surface-2)')}
-            >
-              About
-            </button>
-          </div>
-        </div>
+      {/* ── Modern Top App Bar (Bright Sight inspired) ── */}
+      <HeaderBar
+        activeTab={navTab}
+        onTabChange={setNavTab}
+        theme={theme}
+        onToggleTheme={onToggleTheme || (() => {})}
+        onAddScore={() => fileInputRef.current?.click()}
+        onOpenDrive={isGoogleConfigured ? handleGoogleDrivePick : undefined}
+        onOpenGuide={() => setShowGuideModal(true)}
+        onOpenAbout={() => setShowAboutModal(true)}
+        isGoogleConfigured={isGoogleConfigured}
+        isOnline={isOnline}
+        driveToken={driveToken}
+        onDriveLogout={() => {
+          googleDriveService.logout();
+          setDriveToken(null);
+        }}
+        stats={stats}
+      />
 
+      <main className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-8">
         {/* ── Error banner ── */}
         {errorMsg && (
-          <div className="flex items-start gap-3 mb-6 p-4 rounded-xl"
-            style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}>
+          <div
+            className="flex items-start gap-3 mb-6 p-4 rounded-2xl shadow-sm animate-fade"
+            style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}
+          >
             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-            <span className="text-sm flex-1">{errorMsg}</span>
-            <button onClick={() => setErrorMsg(null)} className="text-xs opacity-70 hover:opacity-100 font-semibold">✕</button>
+            <span className="text-sm flex-1 font-medium">{errorMsg}</span>
+            <button
+              onClick={() => setErrorMsg(null)}
+              className="text-xs opacity-70 hover:opacity-100 font-semibold p-1"
+            >
+              ✕
+            </button>
           </div>
         )}
 
-        {/* ── Library Title & Action Cluster ── */}
+        {/* ── Sub-header: Title, Subtitle, Sort & View Toggles (Bright Sight pattern) ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold tracking-tight" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-              My Library
-            </h2>
-            <span
-              className="text-xs px-2.5 py-0.5 rounded-full font-semibold"
-              style={{
-                background: 'var(--md-surface-2)',
-                color: 'var(--md-on-surface-variant)',
-                border: '1px solid var(--md-outline-variant)',
-              }}
+          <div>
+            <h1
+              className="text-2xl sm:text-3xl font-bold tracking-tight"
+              style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}
             >
-              {filteredFiles.length === files.length
-                ? `${files.length} ${files.length === 1 ? 'score' : 'scores'}`
-                : `${filteredFiles.length} of ${files.length}`}
-            </span>
+              {getSectionTitle()}
+            </h1>
+            <p className="text-xs sm:text-sm mt-0.5 font-medium" style={{ color: 'var(--md-on-surface-variant)' }}>
+              {files.length === 0
+                ? '0 scores'
+                : `${filteredFiles.length} of ${files.length} ${files.length === 1 ? 'score' : 'scores'}`}
+            </p>
           </div>
 
-          {/* Action cluster on right */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Offline status pill */}
+          {/* Sub-header actions (Right) */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Offline indicator */}
             {!isOnline && (
               <div
-                className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold flex-shrink-0"
+                className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold flex-shrink-0 border"
                 style={{
-                  background: 'rgba(200, 120, 0, 0.15)',
-                  color: 'var(--md-primary)',
-                  border: '1px solid rgba(255, 183, 77, 0.25)',
+                  background: 'var(--md-warning-bg)',
+                  borderColor: 'var(--md-warning-border)',
+                  color: 'var(--md-warning-text)',
                 }}
                 title="Offline mode — local scores are accessible"
               >
@@ -652,149 +639,152 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               </div>
             )}
 
-            {/* Add Score button */}
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 h-8 px-4 rounded-full text-xs font-semibold transition-all hover:brightness-110 active:scale-95 flex-shrink-0 shadow-sm"
+            {/* Sort Pill Dropdown (Bright Sight style) */}
+            <div
+              className="flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold cursor-pointer border transition-colors"
               style={{
-                background: 'var(--md-primary)',
-                color: 'var(--md-on-primary)',
+                background: 'var(--md-surface-2)',
+                borderColor: 'var(--md-outline-variant)',
+                color: 'var(--md-on-surface)',
               }}
-              title="Add PDF or MusicXML score"
             >
-              <FileUp className="w-3.5 h-3.5" />
-              <span>Add Score</span>
-            </button>
-
-            {/* Google Drive button */}
-            {isGoogleConfigured && (
-              <button
-                onClick={handleGoogleDrivePick}
-                disabled={connecting || loading || !isOnline}
-                className="flex items-center gap-1.5 h-8 px-3.5 rounded-full text-xs font-semibold transition-all hover:bg-white/10 active:scale-95 flex-shrink-0 disabled:opacity-40"
-                style={{
-                  background: 'var(--md-surface-2)',
-                  color: 'var(--md-on-surface)',
-                  border: '1px solid var(--md-outline-variant)',
-                }}
-                title="Browse Google Drive"
+              <ArrowUpDown className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--md-on-surface-variant)' }} />
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer pr-1"
+                style={{ color: 'var(--md-on-surface)' }}
+                aria-label="Sort scores by"
               >
-                <svg width="15" height="15" viewBox="0 0 87.3 78" fill="none">
-                  <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                  <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
-                  <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
-                  <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                  <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                  <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-                </svg>
-                <span>{connecting ? 'Connecting…' : 'Google Drive'}</span>
-              </button>
-            )}
+                <option value="recent" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>
+                  Recent
+                </option>
+                <option value="name" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>
+                  Title (A–Z)
+                </option>
+                <option value="size" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>
+                  Size
+                </option>
+              </select>
+            </div>
 
-            {(loading || connecting) && (
-              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>
-                <div className="w-4 h-4 rounded-full border-2 border-transparent animate-spin"
-                  style={{ borderTopColor: 'var(--md-primary)' }} />
+            {/* View Mode Toggle Pill */}
+            <div
+              className="flex items-center h-8 rounded-full p-0.5 border"
+              style={{
+                borderColor: 'var(--md-outline-variant)',
+                background: 'var(--md-surface-2)',
+              }}
+            >
+              <button
+                onClick={() => handleViewModeChange('grid')}
+                className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${
+                  viewMode === 'grid'
+                    ? 'shadow-sm font-bold'
+                    : 'opacity-70 hover:opacity-100'
+                }`}
+                style={{
+                  background: viewMode === 'grid' ? 'var(--md-surface-1)' : 'transparent',
+                  color: viewMode === 'grid' ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                }}
+                title="Grid view"
+                aria-label="Grid view"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => handleViewModeChange('list')}
+                className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${
+                  viewMode === 'list'
+                    ? 'shadow-sm font-bold'
+                    : 'opacity-70 hover:opacity-100'
+                }`}
+                style={{
+                  background: viewMode === 'list' ? 'var(--md-surface-1)' : 'transparent',
+                  color: viewMode === 'list' ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+                }}
+                title="List view"
+                aria-label="List view"
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Filter Chips Row & Search Bar (Bright Sight pattern) ── */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
+          {/* Secondary Material Filter Chips */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+            <button
+              onClick={() => setSubFilter('all')}
+              className={`md-filter-chip ${subFilter === 'all' ? 'active' : ''}`}
+            >
+              <span>All</span>
+            </button>
+            <button
+              onClick={() => setSubFilter('offline')}
+              className={`md-filter-chip ${subFilter === 'offline' ? 'active' : ''}`}
+            >
+              <HardDrive className="w-3 h-3" />
+              <span>Offline Available</span>
+            </button>
+            <button
+              onClick={() => setSubFilter('recent')}
+              className={`md-filter-chip ${subFilter === 'recent' ? 'active' : ''}`}
+            >
+              <Clock className="w-3 h-3" />
+              <span>Recently Practiced</span>
+            </button>
+          </div>
+
+          {/* Search Input Pill */}
+          <div className="relative w-full md:w-72">
+            <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--md-on-surface-variant)' }} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  setSearchQuery('');
+                  searchInputRef.current?.blur();
+                }
+              }}
+              placeholder="Search scores... (Press /)"
+              className="w-full pl-9 pr-8 py-1.5 rounded-full text-xs transition-all focus:outline-none focus:ring-2"
+              style={{
+                background: 'var(--md-surface-2)',
+                color: 'var(--md-on-surface)',
+                border: '1px solid var(--md-outline-variant)',
+              }}
+            />
+            {searchQuery ? (
+              <button
+                onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full hover:opacity-100 opacity-70 transition-opacity"
+                style={{ color: 'var(--md-on-surface-variant)' }}
+                title="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <kbd
+                  className="px-1.5 py-0.5 text-[10px] font-medium rounded border"
+                  style={{
+                    background: 'var(--md-surface-3)',
+                    borderColor: 'var(--md-outline-variant)',
+                    color: 'var(--md-on-surface-variant)',
+                  }}
+                >
+                  /
+                </kbd>
               </div>
             )}
           </div>
         </div>
-
-        {/* ── Search, Filter & View Controls Bar ── */}
-        {files.length > 0 && (
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6 p-2 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="w-3.5 h-3.5 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Escape') {
-                    setSearchQuery('');
-                    searchInputRef.current?.blur();
-                  }
-                }}
-                placeholder="Search scores or bookmarks... (Press /)"
-                className="w-full pl-9 pr-8 py-1.5 rounded-full text-xs transition-all focus:outline-none focus:ring-1 focus:ring-amber-400/50"
-                style={{
-                  background: 'var(--md-surface-1)',
-                  color: 'var(--md-on-surface)',
-                  border: '1px solid var(--md-outline-variant)'
-                }}
-              />
-              {searchQuery ? (
-                <button
-                  onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-zinc-400 hover:text-zinc-200"
-                  title="Clear search"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              ) : (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <kbd className="px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 bg-white/5 rounded border border-white/10">/</kbd>
-                </div>
-              )}
-            </div>
-
-            {/* Tabs, Sort, and Grid/List view toggle */}
-            <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end">
-              {/* Filter Tabs */}
-              <div className="flex rounded-full overflow-hidden p-0.5" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
-                {tabs.map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setActiveTab(tab.key)}
-                    className="px-3 py-1 text-xs font-semibold rounded-full transition-colors"
-                    style={{
-                      background: activeTab === tab.key ? 'var(--md-primary-container)' : 'transparent',
-                      color: activeTab === tab.key ? 'var(--md-on-primary-container)' : 'var(--md-on-surface-variant)',
-                    }}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Sort Dropdown */}
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-                <ArrowUpDown className="w-3 h-3 text-zinc-400 shrink-0" />
-                <select
-                  value={sortBy}
-                  onChange={e => setSortBy(e.target.value as any)}
-                  className="bg-transparent text-xs focus:outline-none cursor-pointer pr-1"
-                  style={{ color: 'var(--md-on-surface)' }}
-                >
-                  <option value="recent" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Recent</option>
-                  <option value="name" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Title (A–Z)</option>
-                  <option value="size" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Size</option>
-                  <option value="bookmarks" style={{ background: 'var(--md-surface-2)', color: 'var(--md-on-surface)' }}>Bookmarks</option>
-                </select>
-              </div>
-
-              {/* View Mode Toggle */}
-              <div className="flex items-center rounded-full p-0.5" style={{ border: '1px solid var(--md-outline-variant)', background: 'var(--md-surface-1)' }}>
-                <button
-                  onClick={() => handleViewModeChange('grid')}
-                  className={`p-1.5 rounded-full transition-colors ${viewMode === 'grid' ? 'text-amber-400 bg-white/10 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleViewModeChange('list')}
-                  className={`p-1.5 rounded-full transition-colors ${viewMode === 'list' ? 'text-amber-400 bg-white/10 shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-                  title="List view"
-                >
-                  <List className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ── Library Content ── */}
         {files.length === 0 ? (
@@ -824,10 +814,24 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             </p>
 
             <div className="flex items-center gap-2 mb-6">
-              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              <span
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
+                style={{
+                  background: 'var(--md-pdf-bg)',
+                  borderColor: 'var(--md-pdf-border)',
+                  color: 'var(--md-pdf-text)',
+                }}
+              >
                 PDF (.pdf)
               </span>
-              <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-300 border border-orange-500/20">
+              <span
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
+                style={{
+                  background: 'var(--md-xml-bg)',
+                  borderColor: 'var(--md-xml-border)',
+                  color: 'var(--md-xml-text)',
+                }}
+              >
                 MusicXML (.xml, .musicxml, .mxl)
               </span>
             </div>
@@ -862,14 +866,15 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         ) : filteredFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 rounded-2xl gap-3 text-center"
             style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-white/5 text-zinc-400">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center border"
+              style={{ background: 'var(--md-surface-2)', borderColor: 'var(--md-outline-variant)', color: 'var(--md-on-surface-variant)' }}>
               <Search className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-200">
-                {searchQuery ? `No scores matching "${searchQuery}"` : `No ${activeTab === 'all' ? '' : activeTab} scores found`}
+              <p className="text-sm font-semibold" style={{ color: 'var(--md-on-surface)' }}>
+                {searchQuery ? `No scores matching "${searchQuery}"` : `No ${navTab === 'all' ? '' : navTab} scores found`}
               </p>
-              <p className="text-xs text-zinc-400 mt-1">
+              <p className="text-xs mt-1" style={{ color: 'var(--md-on-surface-variant)' }}>
                 {searchQuery ? 'Check your spelling or try clearing the search filter' : 'Try switching categories or uploading a new score'}
               </p>
             </div>
@@ -880,7 +885,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               >
                 Clear Search
               </button>
-            ) : activeTab === 'drive' && isGoogleConfigured ? (
+            ) : navTab === 'drive' && isGoogleConfigured ? (
               <button
                 onClick={handleGoogleDrivePick}
                 className="md-btn-tonal text-xs py-1.5 px-4 rounded-full mt-2"
@@ -890,22 +895,30 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
             ) : null}
           </div>
         ) : viewMode === 'grid' ? (
-          /* ── Modern Card Grid View ── */
+          /* ── Modern Card Grid View (Bright Sight Pattern) ── */
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-5">
             {filteredFiles.map(file => (
               <div
                 key={file.id}
                 onClick={() => handleFileClick(file)}
-                className="group relative flex flex-col rounded-2xl overflow-hidden cursor-pointer transition-all duration-200 border border-white/[0.08] hover:border-amber-400/40 hover:-translate-y-1 hover:shadow-xl hover:shadow-black/50"
-                style={{ background: 'var(--md-surface-1)' }}
+                className={`group relative flex flex-col md-card-m3 cursor-pointer select-none ${
+                  openShareId === file.id ? 'z-30' : ''
+                }`}
+                style={{ zIndex: openShareId === file.id ? 35 : undefined }}
               >
                 {/* Score Cover */}
-                <div className="relative aspect-[16/10] w-full overflow-hidden flex flex-col justify-between p-3.5 bg-gradient-to-br from-[#26221c] via-[#1a1815] to-[#121110] border-b border-white/[0.06]">
+                <div
+                  className="relative aspect-[16/10] w-full overflow-hidden flex flex-col justify-between p-3.5 border-b transition-colors"
+                  style={{
+                    background: 'var(--md-cover-bg)',
+                    borderColor: 'var(--md-card-border)',
+                  }}
+                >
                   {/* Stave lines overlay */}
-                  <div className="absolute inset-0 score-cover-staves opacity-50 pointer-events-none" />
+                  <div className="absolute inset-0 score-cover-staves opacity-60 pointer-events-none" />
 
                   {/* Faint musical note watermark */}
-                  <div className="absolute right-2 bottom-0 text-white/[0.04] pointer-events-none select-none">
+                  <div className="absolute right-2 bottom-0 opacity-10 pointer-events-none select-none" style={{ color: 'var(--md-on-surface)' }}>
                     <Music className="w-24 h-24 transform rotate-12" />
                   </div>
 
@@ -913,32 +926,62 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                   <div className="relative z-10 flex items-center justify-between gap-1.5 w-full">
                     {/* Format chip */}
                     {isMusicXmlFile(file) ? (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30 backdrop-blur-sm">
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border backdrop-blur-sm"
+                        style={{
+                          background: 'var(--md-xml-bg)',
+                          borderColor: 'var(--md-xml-border)',
+                          color: 'var(--md-xml-text)',
+                        }}
+                      >
                         <Music className="w-2.5 h-2.5" />
                         MusicXML
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/25 backdrop-blur-sm">
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border backdrop-blur-sm"
+                        style={{
+                          background: 'var(--md-pdf-bg)',
+                          borderColor: 'var(--md-pdf-border)',
+                          color: 'var(--md-pdf-text)',
+                        }}
+                      >
                         <FileText className="w-2.5 h-2.5" />
                         PDF
                       </span>
                     )}
 
-                    {/* Source / Offline chip */}
+                    {/* Source chip */}
                     {file.source === 'google-drive' ? (
-                      file.offline ? (
-                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 backdrop-blur-sm" title="Saved offline">
-                          <CheckCircle2 className="w-2.5 h-2.5" />
-                          Offline
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/20 backdrop-blur-sm" title="Stored on Google Drive">
-                          <Cloud className="w-2.5 h-2.5" />
-                          Drive
-                        </span>
-                      )
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border backdrop-blur-sm select-none"
+                        style={{
+                          background: 'var(--md-badge-glass)',
+                          borderColor: 'var(--md-badge-glass-border)',
+                          color: 'var(--md-on-surface-variant)',
+                        }}
+                        title="Source: Google Drive"
+                      >
+                        <svg width="11" height="10" viewBox="0 0 87.3 78" fill="none" className="shrink-0">
+                          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+                          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
+                          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
+                          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+                          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+                          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+                        </svg>
+                        Drive
+                      </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10 backdrop-blur-sm" title="Local storage">
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border backdrop-blur-sm"
+                        style={{
+                          background: 'var(--md-badge-glass)',
+                          borderColor: 'var(--md-badge-glass-border)',
+                          color: 'var(--md-on-surface-variant)',
+                        }}
+                        title="Local storage"
+                      >
                         <HardDrive className="w-2.5 h-2.5" />
                         Local
                       </span>
@@ -955,11 +998,18 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
                   {/* Bottom Cover Row: Date & Last Page */}
                   <div className="relative z-10 flex items-end justify-between w-full">
-                    <span className="text-[10px] font-medium text-zinc-400">
+                    <span className="text-[10px] font-medium" style={{ color: 'var(--md-on-surface-variant)' }}>
                       {formatDate(file.lastOpened)}
                     </span>
                     {!isMusicXmlFile(file) && file.lastPage && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-black/60 text-zinc-300 border border-white/10 backdrop-blur-sm">
+                      <span
+                        className="text-[10px] font-semibold px-1.5 py-0.5 rounded border backdrop-blur-sm"
+                        style={{
+                          background: 'var(--md-badge-glass)',
+                          borderColor: 'var(--md-badge-glass-border)',
+                          color: 'var(--md-on-surface)',
+                        }}
+                      >
                         p. {file.lastPage}
                       </span>
                     )}
@@ -969,19 +1019,17 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                 {/* Card Body */}
                 <div className="p-3.5 flex flex-col flex-1 justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-bold leading-snug line-clamp-2 text-zinc-100 group-hover:text-amber-300 transition-colors" title={file.name}>
+                    <h3
+                      className="text-sm font-bold leading-snug line-clamp-2 transition-colors group-hover:text-amber-500 dark:group-hover:text-amber-300"
+                      style={{ color: 'var(--md-on-surface)' }}
+                      title={file.name}
+                    >
                       {file.name}
                     </h3>
-                    <p className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
+                    <p className="text-[11px] mt-1 flex items-center gap-1.5" style={{ color: 'var(--md-on-surface-variant)' }}>
                       <span>{formatSize(file.size)}</span>
-                      {file.bookmarks && file.bookmarks.length > 0 && (
-                        <>
-                          <span>•</span>
-                          <span className="text-amber-400/90 font-medium">
-                            {file.bookmarks.length} {file.bookmarks.length === 1 ? 'bookmark' : 'bookmarks'}
-                          </span>
-                        </>
-                      )}
+                      <span>•</span>
+                      <span>{formatDate(file.lastOpened)}</span>
                     </p>
                   </div>
 
@@ -1001,19 +1049,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                               onClick={(e) => handleBookmarkClick(file, bm, e)}
                               className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 max-w-full truncate"
                               style={{
-                                background: isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)',
-                                color: isLoop ? '#fb923c' : 'var(--md-primary)',
-                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid rgba(255, 183, 77, 0.2)'
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.26)' : 'rgba(255, 183, 77, 0.22)';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)';
+                                background: isLoop ? 'rgba(234, 88, 12, 0.14)' : 'rgba(255, 183, 77, 0.14)',
+                                color: isLoop ? '#c2410c' : 'var(--md-primary)',
+                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid var(--md-outline-variant)'
                               }}
                               title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
                             >
-                              {isLoop ? <Repeat className="w-2.5 h-2.5 shrink-0" /> : <BookmarkIcon className="w-2.5 h-2.5 shrink-0" />}
+                              {isLoop ? <Repeat className="w-2.5 h-2.5 shrink-0" /> : <BookmarkIcon className="w-2.5 h-2.5 shrink-0 fill-current" />}
                               <span className="truncate">{bm.name}</span>
                               {loopMeasures && !alreadyHasMeasuresInName ? (
                                 <span className="opacity-70 font-normal shrink-0">(m.{bm.loopRange?.startMeasure}–{bm.loopRange?.endMeasure})</span>
@@ -1024,7 +1066,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                           );
                         })}
                       {file.bookmarks.length > 2 && (
-                        <span className="text-[10px] text-zinc-500 self-center px-1">
+                        <span className="text-[10px] self-center px-1" style={{ color: 'var(--md-on-surface-variant)' }}>
                           +{file.bookmarks.length - 2} more
                         </span>
                       )}
@@ -1033,7 +1075,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
                   {/* Card Actions Footer */}
                   <div
-                    className="flex items-center justify-between pt-2 mt-auto border-t border-white/[0.06]"
+                    className="flex items-center justify-between pt-2 mt-auto border-t"
+                    style={{ borderColor: 'var(--md-outline-variant)' }}
                     onClick={e => e.stopPropagation()}
                   >
                     <div className="flex items-center gap-1">
@@ -1041,20 +1084,24 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                       {file.source === 'google-drive' && (
                         <button
                           onClick={e => toggleOfflineCache(file, e)}
-                          className="md-icon-btn text-zinc-400 hover:text-white"
-                          title={file.offline ? 'Remove offline copy (keep in cloud)' : 'Download for offline access'}
-                          style={{ width: 30, height: 30 }}
+                          className="md-icon-btn transition-colors"
+                          title={file.offline ? 'Saved on device • Click to remove offline copy (keeps in Drive)' : 'Download to device for offline access'}
+                          style={{ width: 32, height: 32 }}
                         >
-                          {file.offline ? <CloudOff className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                          {file.offline ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" style={{ color: 'var(--md-success-text)' }} />
+                          ) : (
+                            <Download className="w-3.5 h-3.5 opacity-75 hover:opacity-100" />
+                          )}
                         </button>
                       )}
                     </div>
 
                     <button
                       onClick={e => deleteFileRecord(file.id, e)}
-                      className="md-icon-btn text-zinc-400 hover:text-rose-400 transition-colors"
+                      className="md-icon-btn hover:text-rose-500 transition-colors"
                       title="Remove from library"
-                      style={{ width: 30, height: 30 }}
+                      style={{ width: 32, height: 32 }}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -1070,32 +1117,23 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
               <div
                 key={file.id}
                 onClick={() => handleFileClick(file)}
-                className="flex items-start gap-4 px-4 py-3.5 rounded-xl cursor-pointer transition-all border border-white/[0.05] group"
-                style={{ background: 'var(--md-surface-1)' }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = 'var(--md-surface-2)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 183, 77, 0.25)';
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = 'var(--md-surface-1)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
-                }}
+                className={`relative flex items-center gap-4 px-4 py-3.5 rounded-2xl cursor-pointer transition-all md-card-m3 group select-none ${
+                  openShareId === file.id ? 'z-30' : ''
+                }`}
+                style={{ zIndex: openShareId === file.id ? 35 : undefined }}
               >
-                {/* Icon */}
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 relative overflow-hidden"
-                  style={{ background: 'var(--md-surface-3)' }}>
-                  <div className="absolute inset-0 score-cover-staves opacity-30 pointer-events-none" />
-                  {file.source === 'google-drive' ? (
-                    <svg width="20" height="20" viewBox="0 0 87.3 78" fill="none">
-                      <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                      <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
-                      <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
-                      <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                      <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                      <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-                    </svg>
-                  ) : isMusicXmlFile(file) ? (
-                    <Music className="w-5 h-5 text-orange-400" />
+                {/* Format Icon: Document (PDF/images) vs Playable (MusicXML) */}
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 relative overflow-hidden border"
+                  style={{
+                    background: isMusicXmlFile(file) ? 'rgba(234, 88, 12, 0.14)' : 'var(--md-surface-2)',
+                    borderColor: isMusicXmlFile(file) ? 'rgba(234, 88, 12, 0.35)' : 'var(--md-card-border)',
+                  }}
+                  title={isMusicXmlFile(file) ? 'Playable interactive score (MusicXML)' : 'Sheet music document (PDF)'}
+                >
+                  <div className="absolute inset-0 score-cover-staves opacity-50 pointer-events-none" />
+                  {isMusicXmlFile(file) ? (
+                    <Music className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                   ) : (
                     <FileText className="w-5 h-5" style={{ color: 'var(--md-primary)' }} />
                   )}
@@ -1104,14 +1142,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold truncate group-hover:text-amber-300 transition-colors" style={{ color: 'var(--md-on-surface)' }}>
+                    <p className="text-sm font-semibold truncate group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors" style={{ color: 'var(--md-on-surface)' }}>
                       {file.name}
                     </p>
-                    {isMusicXmlFile(file) && (
-                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-300 border border-orange-500/20 flex-shrink-0">
-                        MusicXML
-                      </span>
-                    )}
                   </div>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
                     {[formatSize(file.size), !isMusicXmlFile(file) ? `p.${file.lastPage}` : undefined, formatDate(file.lastOpened)].filter(Boolean).join(' · ')}
@@ -1128,17 +1161,11 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                             <button
                               key={bm.id}
                               onClick={(e) => handleBookmarkClick(file, bm, e)}
-                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
+                              className="text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors flex items-center gap-1"
                               style={{
-                                background: isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)',
-                                color: isLoop ? '#fb923c' : 'var(--md-primary)',
-                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid rgba(255, 183, 77, 0.2)'
-                              }}
-                              onMouseEnter={e => {
-                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.26)' : 'rgba(255, 183, 77, 0.22)';
-                              }}
-                              onMouseLeave={e => {
-                                e.currentTarget.style.background = isLoop ? 'rgba(234, 88, 12, 0.16)' : 'rgba(255, 183, 77, 0.12)';
+                                background: isLoop ? 'rgba(234, 88, 12, 0.14)' : 'rgba(255, 183, 77, 0.14)',
+                                color: isLoop ? '#c2410c' : 'var(--md-primary)',
+                                border: isLoop ? '1px solid rgba(234, 88, 12, 0.35)' : '1px solid var(--md-outline-variant)'
                               }}
                               title={isLoop ? `Practice loop: ${bm.name}` : `Jump to page ${bm.page}`}
                             >
@@ -1160,39 +1187,72 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
                   )}
                 </div>
 
-                {/* Right column: Offline / Cloud chip + Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
-                  {file.source === 'google-drive' && (
-                    file.offline ? (
-                      <span className="md-chip md-chip-success" title="Saved locally — available offline">
-                        <CheckCircle2 className="w-3 h-3" /> Saved Offline
+                {/* Right column: Source & Offline status + Actions */}
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {/* Source Column (Aligned right in fixed-width column for straight vertical alignment) */}
+                  <div className="w-24 sm:w-28 flex justify-end items-center shrink-0">
+                    {file.source === 'google-drive' ? (
+                      <span
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border select-none"
+                        style={{
+                          background: 'var(--md-surface-2)',
+                          borderColor: 'var(--md-outline-variant)',
+                          color: 'var(--md-on-surface-variant)',
+                        }}
+                        title="Source: Google Drive"
+                      >
+                        <svg width="12" height="11" viewBox="0 0 87.3 78" fill="none" className="shrink-0">
+                          <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+                          <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
+                          <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
+                          <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+                          <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+                          <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+                        </svg>
+                        <span>Drive</span>
                       </span>
                     ) : (
-                      <span className="md-chip md-chip-warning" title="Stored on Google Drive — requires internet to open">
-                        <Cloud className="w-3 h-3" /> Cloud Only
+                      <span
+                        className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border opacity-75 select-none"
+                        style={{
+                          background: 'var(--md-surface-2)',
+                          borderColor: 'var(--md-outline-variant)',
+                          color: 'var(--md-on-surface-variant)',
+                        }}
+                        title="Stored locally on this device"
+                      >
+                        <HardDrive className="w-3 h-3" />
+                        <span>Device</span>
                       </span>
-                    )
-                  )}
+                    )}
+                  </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {renderShareDropdown(file, 'bottom')}
-
-                    {file.source === 'google-drive' && (
+                  {/* Actions Column (Always visible, cloud button on the left next to Drive badge) */}
+                  <div className="w-24 sm:w-28 flex items-center justify-end gap-1 opacity-85 hover:opacity-100 transition-opacity shrink-0">
+                    {file.source === 'google-drive' ? (
                       <button
                         onClick={e => toggleOfflineCache(file, e)}
-                        className="md-icon-btn"
-                        title={file.offline ? 'Remove offline copy (keep in cloud)' : 'Download for offline access'}
+                        className="md-icon-btn transition-colors"
+                        title={file.offline ? 'Saved on device • Click to remove offline copy (keeps in Drive)' : 'Download to device for offline access'}
                         style={{ width: 32, height: 32 }}
                       >
-                        {file.offline ? <CloudOff className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+                        {file.offline ? (
+                          <CheckCircle2 className="w-4 h-4" style={{ color: 'var(--md-success-text)' }} />
+                        ) : (
+                          <Download className="w-4 h-4 opacity-75 hover:opacity-100" />
+                        )}
                       </button>
+                    ) : (
+                      <div className="w-8 h-8 pointer-events-none" />
                     )}
+
+                    {renderShareDropdown(file, 'bottom')}
+
                     <button
                       onClick={e => deleteFileRecord(file.id, e)}
                       className="md-icon-btn hover:text-rose-400 transition-colors"
-                      title="Remove from library"
                       style={{ width: 32, height: 32 }}
+                      title="Remove from library"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1204,14 +1264,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
         )}
 
         {/* ── Footer ── */}
-        <footer className="mt-16 border-t border-white/5 pt-8 pb-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>
+        <footer className="mt-16 border-t pt-8 pb-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs" style={{ borderColor: 'var(--md-outline-variant)', color: 'var(--md-on-surface-variant)' }}>
           <p>&copy; {new Date().getFullYear()} Score Tone. All rights reserved.</p>
           <div className="flex gap-6">
-            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-white transition-colors">Privacy Policy</a>
-            <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-white transition-colors">Terms of Service</a>
+            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:underline transition-colors" style={{ color: 'var(--md-on-surface-variant)' }}>Privacy Policy</a>
+            <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:underline transition-colors" style={{ color: 'var(--md-on-surface-variant)' }}>Terms of Service</a>
           </div>
         </footer>
-      </div>
+      </main>
 
       {/* About Modal */}
       {showAboutModal && (
@@ -1287,114 +1347,130 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
       {/* Features & How to Use Guide Modal */}
       {showGuideModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 animate-fade-in"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
           onClick={e => { if (e.target === e.currentTarget) setShowGuideModal(false); }}
         >
           <div
-            className="flex flex-col rounded-2xl overflow-hidden max-w-lg w-full max-h-[88vh]"
+            className="flex flex-col rounded-3xl overflow-hidden max-w-2xl w-full max-h-[88vh] shadow-2xl"
             style={{
               background: 'var(--md-surface-3)',
               border: '1px solid var(--md-outline-variant)',
-              boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
             }}
           >
             {/* Modal Header */}
             <div
-              className="flex items-center justify-between px-6 py-4"
+              className="flex items-center justify-between px-6 sm:px-8 py-5"
               style={{ borderBottom: '1px solid var(--md-outline-variant)' }}
             >
-              <div className="flex items-center gap-2.5">
-                <Info className="w-5 h-5 text-[var(--md-primary)]" />
-                <h2 className="text-base font-bold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-                  Features & How to Use
-                </h2>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+                  style={{ background: 'rgba(255, 183, 77, 0.16)', color: 'var(--md-primary)' }}
+                >
+                  <Music className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-bold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
+                    Musician&apos;s Guide to ScoreTone
+                  </h2>
+                  <p className="text-xs sm:text-[13px] mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+                    Rehearse, read, and perform from your music stand with confidence
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowGuideModal(false)}
-                className="p-1 rounded-full hover:bg-white/10 transition-colors"
+                className="p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
                 style={{ color: 'var(--md-on-surface-variant)' }}
-                title="Close"
+                title="Close guide"
+                aria-label="Close guide"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto flex flex-col gap-4 text-xs leading-relaxed" style={{ color: 'var(--md-on-surface-variant)' }}>
-              {/* Feature 1: Page Navigation */}
-              <div className="p-3.5 rounded-xl flex gap-3.5" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-                <div className="p-2 rounded-lg h-fit flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.12)', color: 'var(--md-primary)' }}>
-                  <BookOpen className="w-4 h-4" />
+            <div className="p-6 sm:p-8 overflow-y-auto flex flex-col gap-4 text-sm leading-relaxed" style={{ color: 'var(--md-on-surface-variant)' }}>
+              {/* Feature 1: Page Navigation & Performance */}
+              <div className="p-4 sm:p-5 rounded-2xl flex gap-4" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.14)', color: 'var(--md-primary)' }}>
+                  <BookOpen className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm mb-1" style={{ color: 'var(--md-on-surface)' }}>Reading & Page Navigation</h3>
-                  <p className="mb-1.5">Turn pages seamlessly during practice and live performances:</p>
-                  <ul className="list-disc pl-4 flex flex-col gap-1">
-                    <li><strong>Keys & Pedals:</strong> Arrow keys, mouse wheel, or Bluetooth foot pedals (Page Up / Page Down).</li>
-                    <li><strong>Touch & Click:</strong> Tap the left side to go back, right side to turn forward.</li>
-                    <li><strong>Distraction-Free:</strong> Auto-hide controls keep sheet music full screen. Move your cursor to the top bar or right edge (or tap) to reveal menus.</li>
+                <div className="flex-1">
+                  <h3 className="font-bold text-base mb-1" style={{ color: 'var(--md-on-surface)' }}>Reading & Hands-Free Page Turns</h3>
+                  <p className="mb-2 text-[13px]">Turn pages without taking your hands off your instrument:</p>
+                  <ul className="list-disc pl-4 flex flex-col gap-1.5 text-[13px]">
+                    <li><strong>Foot Pedals & Keys:</strong> Supports Bluetooth page turner pedals (Page Up / Page Down), keyboard arrows (← / →), and Spacebar to advance.</li>
+                    <li><strong>Tap Zones:</strong> Tap the left side of your screen to turn back; tap anywhere on the right side to turn forward.</li>
+                    <li><strong>Distraction-Free:</strong> Toolbars fade away while playing so you see only sheet music. Tap anywhere or move your mouse to bring menus back.</li>
+                    <li><strong>Two-Page Spread:</strong> Automatically shows two pages side-by-side on wide tablet screens in landscape or desktop monitors.</li>
                   </ul>
                 </div>
               </div>
 
-              {/* Feature 2: 1-Click Bookmarking */}
-              <div className="p-3.5 rounded-xl flex gap-3.5" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-                <div className="p-2 rounded-lg h-fit flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.12)', color: 'var(--md-primary)' }}>
-                  <BookmarkIcon className="w-4 h-4" />
+              {/* Feature 2: Bookmarks */}
+              <div className="p-4 sm:p-5 rounded-2xl flex gap-4" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.14)', color: 'var(--md-primary)' }}>
+                  <BookmarkIcon className="w-5 h-5 fill-current" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm mb-1" style={{ color: 'var(--md-on-surface)' }}>Quick Bookmarking</h3>
-                  <p className="mb-1.5">Organize movements and practice passages with ease:</p>
-                  <ul className="list-disc pl-4 flex flex-col gap-1">
-                    <li><strong>1-Click Bookmark:</strong> Click the bookmark icon in the top toolbar to instantly bookmark the active page.</li>
-                    <li><strong>Visual Indicator:</strong> Bookmarked pages display an amber corner ribbon on the score canvas.</li>
-                    <li><strong>Side Panel:</strong> Open the Bookmarks tab on the right rail to jump to sections, give bookmarks custom names, or copy shareable permalinks.</li>
+                <div className="flex-1">
+                  <h3 className="font-bold text-base mb-1" style={{ color: 'var(--md-on-surface)' }}>Rehearsal Bookmarks</h3>
+                  <p className="mb-2 text-[13px]">Jump instantly to movements, cadenzas, and rehearsal letters within any piece:</p>
+                  <ul className="list-disc pl-4 flex flex-col gap-1.5 text-[13px]">
+                    <li><strong>1-Tap Bookmark:</strong> Tap the bookmark button in the viewer toolbar to immediately mark your active page.</li>
+                    <li><strong>Score Canvas Ribbon:</strong> Bookmarked pages display an amber corner ribbon on the sheet canvas.</li>
+                    <li><strong>Library Shortcuts:</strong> Quick pills on your library cards (e.g. <code>V (p.4)</code>) open directly to that movement.</li>
+                    <li><strong>Bookmarks Side Rail:</strong> Open the Bookmarks tab on the right edge to name sections, jump around, or remove bookmarks.</li>
                   </ul>
                 </div>
               </div>
 
-              {/* Feature 3: Visual Tone & Lighting */}
-              <div className="p-3.5 rounded-xl flex gap-3.5" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-                <div className="p-2 rounded-lg h-fit flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.12)', color: 'var(--md-primary)' }}>
-                  <Sliders className="w-4 h-4" />
+              {/* Feature 3: Practice Loops (MusicXML) */}
+              <div className="p-4 sm:p-5 rounded-2xl flex gap-4" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(234, 88, 12, 0.16)', color: '#ea580c' }}>
+                  <Repeat className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm mb-1" style={{ color: 'var(--md-on-surface)' }}>Page Tone & Display Controls</h3>
-                  <p className="mb-1.5">Customize score appearance for any lighting conditions:</p>
-                  <ul className="list-disc pl-4 flex flex-col gap-1">
-                    <li><strong>Comfort Sliders:</strong> Tune Sepia, Warmth, Contrast, and Ink Darkness to reduce eye strain under harsh stage lights or dark pits.</li>
-                    <li><strong>Background Presets:</strong> Switch between Ivory, Sepia Cream, Soft Black, and Pure Dark styles.</li>
-                    <li><strong>Two-Page Mode:</strong> View two pages side-by-side on wide desktop or landscape tablet screens.</li>
+                <div className="flex-1">
+                  <h3 className="font-bold text-base mb-1" style={{ color: 'var(--md-on-surface)' }}>Practice Loops & Play-Along (MusicXML)</h3>
+                  <p className="mb-2 text-[13px]">Isolate and master difficult passages with interactive repetition:</p>
+                  <ul className="list-disc pl-4 flex flex-col gap-1.5 text-[13px]">
+                    <li><strong>Set IN & OUT Points:</strong> Click any note to set the <strong>IN (▶)</strong> cue, and Shift+Click or choose a measure to set the <strong>OUT (◀)</strong> cue.</li>
+                    <li><strong>On-Score Cue Badges:</strong> Orange triangular badges appear directly above the notes on your score so you always see your loop boundaries. Tap a badge to clear it.</li>
+                    <li><strong>Tempo & Metronome:</strong> Slow down tricky measures with the tempo slider, practice with a count-in metronome, and play continuously on loop.</li>
+                    <li><strong>Save for Practice:</strong> Save active loops with custom names. Clicking a loop shortcut from your library jumps straight to those measures with loop markers ready to play.</li>
                   </ul>
                 </div>
               </div>
 
-              {/* Feature 4: Audio Playback (MusicXML) */}
-              <div className="p-3.5 rounded-xl flex gap-3.5" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-                <div className="p-2 rounded-lg h-fit flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.12)', color: 'var(--md-primary)' }}>
-                  <Play className="w-4 h-4" />
+              {/* Feature 4: Visual Tone & Lighting */}
+              <div className="p-4 sm:p-5 rounded-2xl flex gap-4" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.14)', color: 'var(--md-primary)' }}>
+                  <Sliders className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm mb-1" style={{ color: 'var(--md-on-surface)' }}>MusicXML Play-Along & Loops</h3>
-                  <p className="mb-1.5">Load interactive scores in <code>.xml</code>, <code>.musicxml</code>, or <code>.mxl</code> format:</p>
-                  <ul className="list-disc pl-4 flex flex-col gap-1">
-                    <li><strong>Synthesized Audio:</strong> Play scores with built-in metronome count-in and variable BPM tempo control.</li>
-                    <li><strong>Loop Practice:</strong> Select A-B loops to practice difficult measures repetitively.</li>
+                <div className="flex-1">
+                  <h3 className="font-bold text-base mb-1" style={{ color: 'var(--md-on-surface)' }}>Stage Lighting & Score Contrast</h3>
+                  <p className="mb-2 text-[13px]">Read clearly under blinding stage lights, dim orchestra pits, or outdoor gigs:</p>
+                  <ul className="list-disc pl-4 flex flex-col gap-1.5 text-[13px]">
+                    <li><strong>Ink Darkening:</strong> Intensifies faint scans and light pencil markings into crisp black so notes are easy to read from your stand.</li>
+                    <li><strong>Lighting Presets:</strong> Instant one-tap switches for Warm Paper, Ivory, Sepia Cream, Night Mode, and Dark Pit.</li>
+                    <li><strong>Eye Comfort Sliders:</strong> Fine-tune paper warmth, sepia tone, brightness, and contrast to eliminate glare and eye fatigue.</li>
                   </ul>
                 </div>
               </div>
 
-              {/* Feature 5: Storage & Cloud Drive */}
-              <div className="p-3.5 rounded-xl flex gap-3.5" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
-                <div className="p-2 rounded-lg h-fit flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.12)', color: 'var(--md-primary)' }}>
-                  <Cloud className="w-4 h-4" />
+              {/* Feature 5: Storage & Offline Reliability */}
+              <div className="p-4 sm:p-5 rounded-2xl flex gap-4" style={{ background: 'var(--md-surface-1)', border: '1px solid var(--md-outline-variant)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255, 183, 77, 0.14)', color: 'var(--md-primary)' }}>
+                  <HardDrive className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm mb-1" style={{ color: 'var(--md-on-surface)' }}>Offline Storage & Google Drive</h3>
-                  <ul className="list-disc pl-4 flex flex-col gap-1">
-                    <li><strong>Offline Access:</strong> Save scores locally in browser storage (IndexedDB) so you can perform without Wi-Fi.</li>
-                    <li><strong>Google Drive:</strong> Connect Google Drive to browse and open scores securely with narrow read permissions.</li>
+                <div className="flex-1">
+                  <h3 className="font-bold text-base mb-1" style={{ color: 'var(--md-on-surface)' }}>Repertoire & Offline Reliability</h3>
+                  <p className="mb-2 text-[13px]">Keep your repertoire ready for any venue, with or without Wi-Fi:</p>
+                  <ul className="list-disc pl-4 flex flex-col gap-1.5 text-[13px]">
+                    <li><strong>100% Offline Ready:</strong> Scores are saved directly on your device so you can practice in basements and perform on stage without an internet connection.</li>
+                    <li><strong>Google Drive Sync:</strong> Connect Google Drive to browse and open your sheet music collection from anywhere.</li>
+                    <li><strong>Quick Search & Sort:</strong> Instantly search scores by title or find specific movements and rehearsal bookmarks.</li>
                   </ul>
                 </div>
               </div>
@@ -1402,14 +1478,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile }) => {
 
             {/* Modal Footer */}
             <div
-              className="flex justify-end px-6 py-3"
+              className="flex justify-end px-6 sm:px-8 py-4"
               style={{ borderTop: '1px solid var(--md-outline-variant)' }}
             >
               <button
                 onClick={() => setShowGuideModal(false)}
-                className="md-btn-filled text-xs py-1.5 px-4 rounded-full"
+                className="md-btn-filled text-sm py-2 px-6 rounded-full font-semibold"
               >
-                Got It
+                Ready to Play
               </button>
             </div>
           </div>
