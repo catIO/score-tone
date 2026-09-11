@@ -177,6 +177,7 @@ body {
 .md-surface-2 { background: var(--md-surface-2); }
 .md-surface-3 { background: var(--md-surface-3); }
 
+@layer components {
 /* ── MD3 Card ── */
 .md-card {
   background: var(--md-surface-1);
@@ -348,6 +349,7 @@ body {
   background: rgba(200, 120, 0, 0.2);
   color: #FFB74D;
 }
+}
 
 /* ── Custom Slider (MD3 style) ── */
 .slider-container {
@@ -415,6 +417,14 @@ body {
 .animate-fade { animation: fadeIn 200ms ease both; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* ── PDF viewer area ── */
 .pdf-page-wrapper canvas {
   display: block;
@@ -440,6 +450,7 @@ body {
   background: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(178, 94, 0, 0.05) 0%, transparent 70%);
 }
 
+@layer components {
 /* ── Material 3 Segmented Pill Bar (Header Navigation) ── */
 .md-segmented-pill {
   display: inline-flex;
@@ -522,6 +533,7 @@ body {
   border-color: var(--md-card-border-hover);
   box-shadow: var(--md-card-shadow-hover);
   transform: translateY(-2px);
+}
 }
 
 /* ── Mobile & Native Safe Areas ── */

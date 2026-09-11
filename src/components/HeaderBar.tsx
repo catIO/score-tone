@@ -1,15 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   FileUp, Sun, Moon, Cloud, Info, BookOpen,
-  Music, FileText, ChevronDown, LogOut, CheckCircle2, User
+  ChevronDown, LogOut, CheckCircle2, User
 } from 'lucide-react';
 import { googleDriveService } from '../services/googleDriveService';
 
-export type NavTab = 'all' | 'pdf' | 'musicxml' | 'drive';
-
 interface HeaderBarProps {
-  activeTab: NavTab;
-  onTabChange: (tab: NavTab) => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
   onAddScore: () => void;
@@ -30,8 +26,6 @@ interface HeaderBarProps {
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
-  activeTab,
-  onTabChange,
   theme,
   onToggleTheme,
   onAddScore,
@@ -83,13 +77,6 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [menuOpen]);
 
-  const navItems: { id: NavTab; label: string; icon: React.ReactNode; count: number }[] = [
-    { id: 'all', label: 'All Scores', icon: null, count: stats.totalScores },
-    { id: 'pdf', label: 'PDFs', icon: <FileText className="w-3 h-3" />, count: stats.pdfCount },
-    { id: 'musicxml', label: 'MusicXML', icon: <Music className="w-3 h-3" />, count: stats.xmlCount },
-    ...(isGoogleConfigured ? [{ id: 'drive' as NavTab, label: 'Drive', icon: <Cloud className="w-3 h-3" />, count: stats.driveCount }] : []),
-  ];
-
   return (
     <header
       className="sticky top-0 z-40 w-full transition-colors duration-200 border-b safe-top"
@@ -100,9 +87,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         WebkitBackdropFilter: 'blur(16px)',
       }}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-[68px] flex items-center justify-between gap-2 sm:gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-[68px] flex items-center justify-between gap-4">
         {/* ── Brand Lockup ── */}
-        <div className="flex items-center gap-3.5 shrink-0 cursor-pointer select-none" onClick={() => onTabChange('all')}>
+        <div className="flex items-center gap-3.5 shrink-0 select-none">
           <div className="relative flex items-center justify-center">
             <svg viewBox="0 -960 960 960" className="w-10 h-10 sm:w-11 sm:h-11 drop-shadow-sm transition-transform hover:scale-105">
               {/* Outer folder frames */}
@@ -118,7 +105,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               />
             </svg>
           </div>
-          <div className="hidden sm:block">
+          <div>
             <div className="flex items-center gap-1.5">
               <span
                 className="text-lg sm:text-xl font-bold tracking-tight leading-tight"
@@ -127,41 +114,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 Score Tone
               </span>
             </div>
-            <p className="text-xs sm:text-[13px] leading-tight mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+            <p className="hidden sm:block text-xs sm:text-[13px] leading-tight mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
               Your sheet music, in perfect light
             </p>
           </div>
         </div>
-
-        {/* ── Segmented Navigation Menu (Bright Sight Style) ── */}
-        <nav
-          className="md-segmented-pill overflow-x-auto no-scrollbar max-w-full"
-          aria-label="Library category navigation"
-        >
-          {navItems.map(item => {
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onTabChange(item.id)}
-                className={`md-segmented-pill-btn ${isActive ? 'active' : ''}`}
-                title={`${item.label} (${item.count})`}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-                {item.count > 0 && (
-                  <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold transition-opacity ${
-                      isActive ? 'bg-black/20 text-inherit' : 'bg-black/10 dark:bg-white/10 text-inherit'
-                    }`}
-                  >
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
 
         {/* ── Right Action Cluster ── */}
         <div className="flex items-center gap-2 shrink-0">
@@ -342,6 +299,21 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
                 {/* Actions List */}
                 <div className="py-1">
+                  {/* Add Score Option (Mobile shortcut) */}
+                  <div
+                    onClick={() => { setMenuOpen(false); onAddScore(); }}
+                    className="flex items-center justify-between px-4 py-2.5 text-xs cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 sm:hidden"
+                    style={{ color: 'var(--md-on-surface)' }}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <FileUp className="w-4 h-4 text-amber-500" />
+                      <span>Add Score</span>
+                    </div>
+                    <span className="text-[10px]" style={{ color: 'var(--md-on-surface-variant)' }}>
+                      PDF / XML
+                    </span>
+                  </div>
+
                   {/* Theme Switcher Row */}
                   <div
                     onClick={onToggleTheme}

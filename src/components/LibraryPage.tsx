@@ -7,7 +7,7 @@ import {
 import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
-import HeaderBar, { type NavTab } from './HeaderBar';
+import HeaderBar from './HeaderBar';
 
 interface LibraryPageProps {
   onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number, queryParams?: Record<string, string>) => void;
@@ -17,7 +17,6 @@ interface LibraryPageProps {
 
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'dark', onToggleTheme }) => {
   const [files, setFiles] = useState<ScoreFile[]>([]);
-  const [navTab, setNavTab] = useState<NavTab>('all');
   const [subFilter, setSubFilter] = useState<'all' | 'offline' | 'recent'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('scoretone_view_mode') as 'grid' | 'list') || 'grid';
@@ -445,21 +444,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   };
 
   const getSectionTitle = () => {
-    switch (navTab) {
-      case 'pdf': return 'PDF Scores';
-      case 'musicxml': return 'MusicXML Scores';
-      case 'drive': return 'Google Drive Scores';
+    switch (subFilter) {
+      case 'offline': return 'Offline Available';
+      case 'recent': return 'Recently Practiced';
       default: return 'All Scores';
     }
   };
 
   const filteredFiles = files
-    .filter(f => {
-      if (navTab === 'pdf') return !isMusicXmlFile(f);
-      if (navTab === 'musicxml') return isMusicXmlFile(f);
-      if (navTab === 'drive') return f.source === 'google-drive';
-      return true;
-    })
     .filter(f => {
       if (subFilter === 'offline') return f.offline;
       if (subFilter === 'recent') {
@@ -569,8 +561,6 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
 
       {/* ── Modern Top App Bar (Bright Sight inspired) ── */}
       <HeaderBar
-        activeTab={navTab}
-        onTabChange={setNavTab}
         theme={theme}
         onToggleTheme={onToggleTheme || (() => {})}
         onAddScore={() => fileInputRef.current?.click()}
@@ -752,7 +742,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                   searchInputRef.current?.blur();
                 }
               }}
-              placeholder="Search scores... (Press /)"
+              placeholder="Search scores..."
               className="w-full pl-9 pr-8 py-1.5 rounded-full text-xs transition-all focus:outline-none focus:ring-2"
               style={{
                 background: 'var(--md-surface-2)',
@@ -770,7 +760,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                 <X className="w-3.5 h-3.5" />
               </button>
             ) : (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <div className="hidden sm:block absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 <kbd
                   className="px-1.5 py-0.5 text-[10px] font-medium rounded border"
                   style={{
@@ -793,7 +783,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
             onClick={() => fileInputRef.current?.click()}
             onDragOver={e => e.preventDefault()}
             onDrop={handleDrop}
-            className="flex flex-col items-center justify-center p-12 md:p-16 rounded-3xl cursor-pointer transition-all hover:border-[var(--md-primary)] text-center my-6 relative overflow-hidden group"
+            className="flex flex-col items-center justify-center p-6 sm:p-12 md:p-16 rounded-3xl cursor-pointer transition-all hover:border-[var(--md-primary)] text-center my-4 sm:my-6 relative overflow-hidden group"
             style={{
               border: '2px dashed var(--md-outline-variant)',
               background: 'var(--md-surface-1)',
@@ -813,7 +803,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               Drop a PDF or MusicXML file here, or click to browse files on your device.
             </p>
 
-            <div className="flex items-center gap-2 mb-6">
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
               <span
                 className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
                 style={{
@@ -836,7 +826,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               </span>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
               <button
                 type="button"
                 className="md-btn-filled text-xs py-2 px-5 rounded-full"
@@ -872,27 +862,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
             </div>
             <div>
               <p className="text-sm font-semibold" style={{ color: 'var(--md-on-surface)' }}>
-                {searchQuery ? `No scores matching "${searchQuery}"` : `No ${navTab === 'all' ? '' : navTab} scores found`}
+                {searchQuery ? `No scores matching "${searchQuery}"` : 'No scores found'}
               </p>
               <p className="text-xs mt-1" style={{ color: 'var(--md-on-surface-variant)' }}>
-                {searchQuery ? 'Check your spelling or try clearing the search filter' : 'Try switching categories or uploading a new score'}
+                {searchQuery ? 'Check your spelling or try clearing the search filter' : 'Try uploading a new score or checking other filters'}
               </p>
             </div>
-            {searchQuery ? (
+            {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
                 className="md-btn-tonal text-xs py-1.5 px-4 rounded-full mt-2"
               >
                 Clear Search
               </button>
-            ) : navTab === 'drive' && isGoogleConfigured ? (
-              <button
-                onClick={handleGoogleDrivePick}
-                className="md-btn-tonal text-xs py-1.5 px-4 rounded-full mt-2"
-              >
-                Open from Google Drive
-              </button>
-            ) : null}
+            )}
           </div>
         ) : viewMode === 'grid' ? (
           /* ── Modern Card Grid View (Bright Sight Pattern) ── */

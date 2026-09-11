@@ -4,7 +4,7 @@ import ViewerPage from './components/ViewerPage';
 import { settingsService, type AppSettings } from './services/settingsService';
 import { storageService, type ScoreFile } from './services/storageService';
 import { googleDriveService } from './services/googleDriveService';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, X } from 'lucide-react';
 import UpdatePrompt from './components/UpdatePrompt';
 import { forceReleaseWakeLock } from './hooks/useWakeLock';
 
@@ -369,18 +369,55 @@ export const App: React.FC = () => {
   return (
     <div className="app-container">
       {importError && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 text-sm flex items-start gap-3 max-w-md">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-          <div className="flex-1">
-            <p className="font-semibold text-rose-300">Link Import Failed</p>
-            <p className="text-xs mt-1">{importError}</p>
-            <button
-              onClick={() => setImportError(null)}
-              className="mt-2 text-xs font-bold text-rose-400 hover:text-white"
-            >
-              Dismiss
-            </button>
+        <div
+          role="alert"
+          className="fixed bottom-6 inset-x-4 sm:inset-x-auto sm:right-6 sm:w-[440px] z-50 p-4 rounded-2xl shadow-2xl flex items-start gap-3.5 animate-fade border"
+          style={{
+            background: 'var(--md-surface-2)',
+            borderColor: 'rgba(244, 63, 94, 0.4)',
+            boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.7), 0 0 16px -2px rgba(244, 63, 94, 0.15)',
+          }}
+        >
+          <div
+            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185' }}
+          >
+            <AlertCircle className="w-5 h-5" />
           </div>
+
+          <div className="flex-1 min-w-0 pr-1">
+            <h4
+              className="text-sm font-bold tracking-tight text-white mb-1"
+              style={{ fontFamily: 'Outfit, sans-serif' }}
+            >
+              Link Import Failed
+            </h4>
+            <p className="text-xs leading-relaxed text-zinc-300 font-normal">
+              {importError}
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                onClick={() => setImportError(null)}
+                className="text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors hover:bg-white/10 active:scale-95"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  borderColor: 'rgba(255, 255, 255, 0.12)',
+                  color: 'var(--md-on-surface)',
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setImportError(null)}
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+            title="Close"
+            aria-label="Close notification"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
