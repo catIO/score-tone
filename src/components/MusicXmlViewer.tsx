@@ -346,7 +346,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         return;
       }
 
-      if (!isPlaying && !isPaused && playbackState.currentBeat === 0) {
+      if (!isPlaying && !isPaused && !playbackState.loopRange && playbackState.currentBeat === 0) {
         svgs.forEach(s => {
           const group = s.querySelector('.scoretone-playback-cursor') as HTMLElement | null;
           if (group) group.style.display = 'none';

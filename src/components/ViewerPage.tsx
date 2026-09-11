@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Loader2, AlertTriangle, ArrowLeft, Repeat } from 'lucide-react';
+import { Loader2, AlertTriangle, ArrowLeft, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ScoreFile, Bookmark } from '../services/storageService';
 import { storageService, isMusicXmlFile } from '../services/storageService';
 import type { AppSettings, FilterSettings } from '../services/settingsService';
@@ -49,6 +49,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Playback state for MusicXML
   const [playbackState, setPlaybackState] = useState<PlaybackState>(audioPlaybackService.getState());
   const [countInEnabled, setCountInEnabled] = useState<boolean>(audioPlaybackService.getCountIn());
+  const [loopPauseSeconds, setLoopPauseSeconds] = useState<number>(() => audioPlaybackService.getLoopPauseSeconds());
 
   // Panel display toggles — toolbar shown only when hovering the top zone
   const [toolbarVisible, setToolbarVisible] = useState<boolean>(false);
@@ -321,12 +322,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   }, [playbackState.bpm]);
 
   const handleRewind = useCallback(() => {
-    if (playbackState.loopEnabled && playbackState.loopRange) {
+    if (playbackState.loopRange) {
       audioPlaybackService.seek(playbackState.loopRange.startBeat);
     } else {
       audioPlaybackService.stop();
     }
-  }, [playbackState.loopEnabled, playbackState.loopRange]);
+  }, [playbackState.loopRange]);
 
   const handleBpmChange = useCallback((newBpm: number) => {
     audioPlaybackService.setTempo(newBpm);
@@ -340,6 +341,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const handleToggleCountIn = useCallback((enabled: boolean) => {
     setCountInEnabled(enabled);
     audioPlaybackService.setCountIn(enabled);
+  }, []);
+
+  const handleLoopPauseSecondsChange = useCallback((seconds: number) => {
+    setLoopPauseSeconds(seconds);
+    audioPlaybackService.setLoopPauseSeconds(seconds);
   }, []);
 
   const handleToggleLoop = useCallback(() => {
@@ -514,18 +520,34 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
 
     if (target.closest('.sidebar-control-panel') || target.closest('.md-top-bar') || target.closest('.side-rail-panel') || target.closest('button') || target.closest('input')) return;
+  };
+
+  const [hoverSide, setHoverSide] = useState<'left' | 'right' | null>(null);
+
+  const handleContainerMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current || totalPages <= 1) return;
+    const target = e.target as HTMLElement;
+    if (isDisplayOpen || isSettingsOpen || isBookmarksOpen || target.closest('.sidebar-control-panel') || target.closest('.md-top-bar')) {
+      if (hoverSide !== null) setHoverSide(null);
+      return;
+    }
 
     const { clientX } = e;
-    const { offsetWidth, offsetHeight } = containerRef.current;
-    const boundary = (appSettings.tapZoneWidth / 100) * offsetWidth;
-    const step = (appSettings.twoPageLandscape && offsetWidth > offsetHeight) ? 2 : 1;
+    const { offsetWidth } = containerRef.current;
+    const boundary = ((appSettings.tapZoneWidth || 18) / 100) * offsetWidth;
 
     if (clientX < boundary) {
-      handlePageChange(Math.max(1, currentPage - step));
+      if (hoverSide !== 'left') setHoverSide('left');
     } else if (clientX > offsetWidth - boundary) {
-      handlePageChange(Math.min(totalPages, currentPage + step));
+      if (hoverSide !== 'right') setHoverSide('right');
+    } else {
+      if (hoverSide !== null) setHoverSide(null);
     }
-  };
+  }, [totalPages, isDisplayOpen, isSettingsOpen, isBookmarksOpen, hoverSide, appSettings.tapZoneWidth]);
+
+  const handleContainerMouseLeave = useCallback(() => {
+    setHoverSide(null);
+  }, []);
 
   const handleAddBookmark = async (name: string, page: number) => {
     const existing = file.bookmarks || [];
@@ -708,6 +730,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     <div
       ref={containerRef}
       onClick={handleScreenTap}
+      onMouseMove={handleContainerMouseMove}
+      onMouseLeave={handleContainerMouseLeave}
       className="page-container relative w-full h-screen overflow-hidden select-none"
       style={{ background: '#111' }}
     >
@@ -756,6 +780,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             onVolumeChange={isMusicXml ? handleVolumeChange : undefined}
             countInEnabled={countInEnabled}
             onToggleCountIn={handleToggleCountIn}
+            loopPauseSeconds={loopPauseSeconds}
+            onLoopPauseSecondsChange={handleLoopPauseSecondsChange}
             onToggleLoop={isMusicXml ? handleToggleLoop : undefined}
             isCurrentPageBookmarked={isCurrentPageBookmarked}
             onToggleCurrentPageBookmark={handleToggleCurrentPageBookmark}
@@ -963,19 +989,96 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         />
       </div>
 
-      {/* Page indicator — always visible, bottom center */}
-      <div
-        className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold pointer-events-none"
-        style={{
-          background: 'rgba(0,0,0,0.5)',
-          color: 'rgba(255,255,255,0.6)',
-          backdropFilter: 'none',
-        }}
-      >
-        {!isMusicXml && appSettings.twoPageLandscape && appSettings.scrollMode === 'single' && (containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : window.innerWidth > window.innerHeight) && currentPage + 1 <= totalPages
-          ? `${currentPage}–${currentPage + 1} / ${totalPages}`
-          : `${currentPage} / ${totalPages}`}
-      </div>
+      {/* Subtle Floating Edge Navigation Chevrons */}
+      {totalPages > 1 && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              handlePageChange(Math.max(1, currentPage - step));
+            }}
+            disabled={currentPage <= 1}
+            className={`absolute left-0 top-1/2 -translate-y-1/2 h-20 rounded-r-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-r border-white/10 ${
+              currentPage <= 1
+                ? 'opacity-0 pointer-events-none'
+                : hoverSide === 'left'
+                  ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
+                  : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
+            }`}
+            title="Previous Page (←)"
+            aria-label="Previous Page"
+          >
+            <ChevronLeft className="w-5 h-5 mr-0.5" />
+          </button>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              handlePageChange(Math.min(totalPages, currentPage + step));
+            }}
+            disabled={currentPage >= totalPages}
+            className={`absolute right-0 top-1/2 -translate-y-1/2 h-20 rounded-l-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-l border-white/10 ${
+              currentPage >= totalPages
+                ? 'opacity-0 pointer-events-none'
+                : hoverSide === 'right'
+                  ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
+                  : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
+            }`}
+            title="Next Page (→)"
+            aria-label="Next Page"
+          >
+            <ChevronRight className="w-5 h-5 ml-0.5" />
+          </button>
+        </>
+      )}
+
+      {/* Interactive Bottom Page Indicator Capsule */}
+      {totalPages > 1 && (
+        <div
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-semibold shadow-lg select-none z-30 border border-white/10 transition-all"
+          style={{
+            background: 'rgba(22, 22, 29, 0.85)',
+            color: 'rgba(255, 255, 255, 0.85)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              handlePageChange(Math.max(1, currentPage - step));
+            }}
+            disabled={currentPage <= 1}
+            className="w-6 h-6 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition-colors focus:outline-none"
+            title="Previous Page (←)"
+            aria-label="Previous Page"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <span className="px-1.5 font-mono text-[11px] tracking-wide text-slate-300">
+            {!isMusicXml && appSettings.twoPageLandscape && appSettings.scrollMode === 'single' && (containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : window.innerWidth > window.innerHeight) && currentPage + 1 <= totalPages
+              ? `${currentPage}–${currentPage + 1} / ${totalPages}`
+              : `${currentPage} / ${totalPages}`}
+          </span>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              handlePageChange(Math.min(totalPages, currentPage + step));
+            }}
+            disabled={currentPage >= totalPages}
+            className="w-6 h-6 rounded-full flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-300 transition-colors focus:outline-none"
+            title="Next Page (→)"
+            aria-label="Next Page"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

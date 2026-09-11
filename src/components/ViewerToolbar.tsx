@@ -29,6 +29,8 @@ interface ViewerToolbarProps {
   countInEnabled?: boolean;
   onToggleCountIn?: (enabled: boolean) => void;
   onToggleLoop?: () => void;
+  loopPauseSeconds?: number;
+  onLoopPauseSecondsChange?: (seconds: number) => void;
   isCurrentPageBookmarked?: boolean;
   onToggleCurrentPageBookmark?: () => void;
 }
@@ -41,6 +43,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   playbackState, onTogglePlay, onRewind, onBpmChange, onVolumeChange,
   countInEnabled = true, onToggleCountIn,
   onToggleLoop,
+  loopPauseSeconds, onLoopPauseSecondsChange,
   isCurrentPageBookmarked = false,
   onToggleCurrentPageBookmark,
 }) => {
@@ -174,6 +177,8 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
               countInEnabled={countInEnabled}
               onToggleCountIn={onToggleCountIn || (() => {})}
               onToggleLoop={onToggleLoop}
+              loopPauseSeconds={loopPauseSeconds}
+              onLoopPauseSecondsChange={onLoopPauseSecondsChange}
             />
             {onToggleCurrentPageBookmark && (
               <>

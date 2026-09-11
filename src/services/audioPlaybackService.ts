@@ -36,6 +36,9 @@ export interface PlaybackState {
   countInActive: boolean;
   loopEnabled: boolean;
   loopRange: LoopRange | null;
+  loopPauseActive?: boolean;
+  loopPauseRemaining?: number;
+  loopPauseSeconds?: number;
 }
 
 type StateListener = (state: PlaybackState) => void;
@@ -66,6 +69,19 @@ class AudioPlaybackService {
   private playbackTimeout: ReturnType<typeof setTimeout> | null = null;
   private cursorInterval: ReturnType<typeof setInterval> | null = null;
   private loopPauseTimeout: ReturnType<typeof setTimeout> | null = null;
+  private loopPauseTimer: ReturnType<typeof setInterval> | null = null;
+  private loopPauseRemaining: number = 0;
+  private isLoopPausing: boolean = false;
+  private loopPauseSeconds: number = (() => {
+    try {
+      const saved = localStorage.getItem('scoretone_loop_pause_seconds');
+      if (saved !== null) {
+        const val = parseInt(saved, 10);
+        return isNaN(val) ? 0 : val;
+      }
+    } catch { /* ignore */ }
+    return 0;
+  })();
 
   private stateListeners: Set<StateListener> = new Set();
   private noteListeners: Set<NoteListener> = new Set();
@@ -121,6 +137,9 @@ class AudioPlaybackService {
       countInActive,
       loopEnabled: this.loopEnabled && this.loopRange !== null,
       loopRange: this.loopRange,
+      loopPauseActive: this.isLoopPausing,
+      loopPauseRemaining: this.loopPauseRemaining,
+      loopPauseSeconds: this.loopPauseSeconds,
     };
   }
 
@@ -157,6 +176,19 @@ class AudioPlaybackService {
 
   public getCountIn(): boolean {
     return this.enableCountIn;
+  }
+
+  public setLoopPauseSeconds(seconds: number): void {
+    const clamped = Math.max(0, Math.min(30, seconds));
+    this.loopPauseSeconds = clamped;
+    try {
+      localStorage.setItem('scoretone_loop_pause_seconds', String(clamped));
+    } catch { /* ignore */ }
+    this.notifyState();
+  }
+
+  public getLoopPauseSeconds(): number {
+    return this.loopPauseSeconds;
   }
 
   public getCurrentXml(): string | null {
@@ -426,24 +458,38 @@ class AudioPlaybackService {
     const wasPaused = this.isCurrentlyPaused;
     this.isCurrentlyPaused = false;
 
+    if (this.loopPauseTimer) {
+      clearInterval(this.loopPauseTimer);
+      this.loopPauseTimer = null;
+    }
+    if (this.loopPauseTimeout) {
+      clearTimeout(this.loopPauseTimeout);
+      this.loopPauseTimeout = null;
+    }
+    this.isLoopPausing = false;
+    this.loopPauseRemaining = 0;
+
     // Clean any prior active nodes
     this.activeNodes.forEach(node => {
       try { node.stop(); } catch { /* ignore */ }
     });
     this.activeNodes = [];
 
-    // Loop bounds check
+    // Loop / Cue bounds check
     const isLoopActive = this.loopEnabled && this.loopRange !== null;
-    if (isLoopActive && this.loopRange) {
-      if (this.pausedTimeInBeats < this.loopRange.startBeat || this.pausedTimeInBeats >= this.loopRange.endBeat) {
+    if (this.loopRange) {
+      const maxEnd = isLoopActive ? this.loopRange.endBeat : this.totalBeats;
+      if (this.pausedTimeInBeats < this.loopRange.startBeat || this.pausedTimeInBeats >= maxEnd) {
         this.pausedTimeInBeats = this.loopRange.startBeat;
       }
     }
 
     const secondsPerBeat = 60 / this.activeBpm;
-    const countInBeats = isLoopActive
+    const isAtInCue = this.loopRange !== null && Math.abs(this.pausedTimeInBeats - this.loopRange.startBeat) < 0.05;
+    const isAtStart = Math.abs(this.pausedTimeInBeats) < 0.001;
+    const countInBeats = (this.enableCountIn && (isLoopActive || isAtInCue || isAtStart || !wasPaused))
       ? this.beatsPerBar
-      : ((!wasPaused && this.enableCountIn) ? this.beatsPerBar : 0);
+      : (isLoopActive ? this.beatsPerBar : 0);
     const countInDuration = countInBeats * secondsPerBeat;
     const now = ctx.currentTime;
 
@@ -593,10 +639,36 @@ class AudioPlaybackService {
     this.isCurrentlyPaused = false;
     this.pausedTimeInBeats = this.loopRange.startBeat;
 
-    // Immediately trigger loop playback with whole-measure count-in
-    this.play(this.activeBpm).catch(err => {
-      console.warn('Error looping playback:', err);
-    });
+    if (this.loopPauseSeconds > 0) {
+      this.isLoopPausing = true;
+      this.loopPauseRemaining = this.loopPauseSeconds;
+      this.notifyState(false);
+
+      if (this.loopPauseTimer) clearInterval(this.loopPauseTimer);
+      this.loopPauseTimer = setInterval(() => {
+        this.loopPauseRemaining--;
+        if (this.loopPauseRemaining <= 0) {
+          if (this.loopPauseTimer) {
+            clearInterval(this.loopPauseTimer);
+            this.loopPauseTimer = null;
+          }
+          this.isLoopPausing = false;
+          this.notifyState(false);
+          if (this.loopEnabled && this.loopRange) {
+            this.play(this.activeBpm).catch(err => {
+              console.warn('Error looping playback:', err);
+            });
+          }
+        } else {
+          this.notifyState(false);
+        }
+      }, 1000);
+    } else {
+      // Immediately trigger loop playback with whole-measure count-in
+      this.play(this.activeBpm).catch(err => {
+        console.warn('Error looping playback:', err);
+      });
+    }
   }
 
   public pause(): void {
@@ -613,13 +685,13 @@ class AudioPlaybackService {
   public stop(): void {
     this.isCurrentlyPlaying = false;
     this.isCurrentlyPaused = false;
-    this.pausedTimeInBeats = this.loopEnabled && this.loopRange ? this.loopRange.startBeat : 0;
+    this.pausedTimeInBeats = this.loopRange ? this.loopRange.startBeat : 0;
     this.stopInternal(true);
     this.notifyState();
   }
 
   public rewind(): void {
-    if (this.loopEnabled && this.loopRange) {
+    if (this.loopRange) {
       this.seek(this.loopRange.startBeat);
     } else {
       this.stop();
@@ -657,6 +729,13 @@ class AudioPlaybackService {
   }
 
   private stopInternal(resetContext: boolean): void {
+    if (this.loopPauseTimer) {
+      clearInterval(this.loopPauseTimer);
+      this.loopPauseTimer = null;
+    }
+    this.isLoopPausing = false;
+    this.loopPauseRemaining = 0;
+
     if (this.loopPauseTimeout) {
       clearTimeout(this.loopPauseTimeout);
       this.loopPauseTimeout = null;
