@@ -88,22 +88,26 @@ export const App: React.FC = () => {
             // Download the file using token if available, or via public download strategies
             const blob = await googleDriveService.downloadFile(targetId, token);
 
-            // Success! Auto-cache file in IndexedDB so it's instantly available next time
-            const fileToSave: ScoreFile = existing
-              ? { ...existing, lastOpened: Date.now(), offline: true, size: blob.size }
-              : {
+            // If the user already has this score in their library, refresh cache & metadata.
+            // Otherwise, open it in memory preview mode without automatically saving to library.
+            let fileToOpen: ScoreFile;
+            if (existing) {
+              fileToOpen = { ...existing, lastOpened: Date.now(), offline: true, size: blob.size, ...(linkedPage ? { lastPage: linkedPage } : {}) };
+              await storageService.cacheFileOffline(fileToOpen, blob);
+            } else {
+              fileToOpen = {
                 id: targetId,
                 name: name.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
                 source: 'google-drive',
                 fileType: /\.(xml|musicxml|mxl)$/i.test(name) ? 'musicxml' : 'pdf',
                 lastOpened: Date.now(),
                 lastPage: linkedPage ?? 1,
-                offline: true,
+                offline: false,
                 size: blob.size,
               };
-            await storageService.cacheFileOffline(fileToSave, blob);
+            }
 
-            setActiveFile(existing ? { ...existing, ...(linkedPage ? { lastPage: linkedPage } : {}) } : fileToSave);
+            setActiveFile(fileToOpen);
             setInMemoryBlob(blob);
             setActivePage('viewer');
             setPendingLink(null);
@@ -200,12 +204,14 @@ export const App: React.FC = () => {
         fileType: /\.(xml|musicxml|mxl)$/i.test(shareName) ? 'musicxml' : 'pdf',
         lastOpened: Date.now(),
         lastPage: existing?.lastPage ?? 1,
-        offline: true,
+        offline: Boolean(existing?.offline),
         size: blob.size,
         ...(existing?.bookmarks ? { bookmarks: existing.bookmarks } : {})
       };
 
-      await storageService.cacheFileOffline(newFile, blob);
+      if (existing) {
+        await storageService.cacheFileOffline(newFile, blob);
+      }
       handleOpenFile(newFile, blob);
     } catch (err: any) {
       console.error('Failed to import shared Google Drive file', err);

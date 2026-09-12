@@ -62,6 +62,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const [zoom, setZoom] = useState<number>(1.0);
   const [scrollToLoopTrigger, setScrollToLoopTrigger] = useState<number>(0);
 
+  const [isSavedInLibrary, setIsSavedInLibrary] = useState<boolean>(Boolean(file.offline));
+  const [savingToLibrary, setSavingToLibrary] = useState<boolean>(false);
+  const [saveSuccessToast, setSaveSuccessToast] = useState<boolean>(false);
+  const [dismissedPreviewBanner, setDismissedPreviewBanner] = useState<boolean>(false);
+
   const isCurrentPageBookmarked = (file.bookmarks || []).some(
     bm => bm.page === currentPage && bm.type !== 'loop'
   );
@@ -158,7 +163,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           // 3. Fallback: If it's a Google Drive file, try to download it on-the-fly
           if (file.source === 'google-drive') {
             rawData = await googleDriveService.downloadFile(file.id);
-            if (rawData) {
+            if (rawData && file.offline) {
               await storageService.cacheFileOffline(file, rawData).catch(() => {});
             }
           } else if (file.source === 'local') {
@@ -276,17 +281,32 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
   };
 
-  // Save the currently loaded in-memory blob to IndexedDB
-  const handleSaveOffline = async () => {
-    if (!inMemoryBlob) { setErrorMsg('Cannot cache: source data is missing.'); return; }
-    setLoading(true);
+  // Explicitly save this score to the user's local IndexedDB library
+  const handleSaveToLibrary = async () => {
+    const blobToSave = inMemoryBlob || (await storageService.getFileData(file.id));
+    if (!blobToSave) {
+      setErrorMsg('Cannot save score: source data is missing.');
+      return;
+    }
+    setSavingToLibrary(true);
     try {
-      await storageService.cacheFileOffline(file, inMemoryBlob);
+      const updatedFile: ScoreFile = {
+        ...file,
+        offline: true,
+        size: blobToSave.size,
+        lastOpened: Date.now(),
+        lastPage: currentPage,
+      };
+      await storageService.cacheFileOffline(updatedFile, blobToSave);
       file.offline = true;
+      setIsSavedInLibrary(true);
+      setSaveSuccessToast(true);
+      onFileMetadataUpdated?.(updatedFile);
+      setTimeout(() => setSaveSuccessToast(false), 3000);
     } catch (err: any) {
-      setErrorMsg('Failed to save offline: ' + err.message);
+      setErrorMsg('Failed to save to library: ' + err.message);
     } finally {
-      setLoading(false);
+      setSavingToLibrary(false);
     }
   };
 
@@ -769,7 +789,9 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             isDisplayOpen={isDisplayOpen}
             isSettingsOpen={isSettingsOpen}
             isBookmarksOpen={isBookmarksOpen}
-            onSaveOffline={handleSaveOffline}
+            onSaveOffline={handleSaveToLibrary}
+            isSavedInLibrary={isSavedInLibrary}
+            savingToLibrary={savingToLibrary}
             zoom={zoom}
             onZoomIn={zoomIn}
             onZoomOut={zoomOut}
@@ -789,6 +811,58 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           />
         </div>
       </div>
+
+      {/* Floating preview banner for shared scores not yet saved to library */}
+      {!isSavedInLibrary && !dismissedPreviewBanner && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full shadow-2xl flex items-center gap-3 animate-fade border max-w-[92vw]"
+          style={{
+            background: 'var(--md-surface-2)',
+            borderColor: 'var(--md-outline-variant)',
+            color: 'var(--md-on-surface)',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)',
+          }}
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="material-symbols-outlined text-amber-400 text-[18px]">visibility</span>
+            <span className="text-xs font-medium truncate hidden sm:inline" style={{ color: 'var(--md-on-surface-variant)' }}>
+              Shared score preview
+            </span>
+          </div>
+          <button
+            onClick={handleSaveToLibrary}
+            disabled={savingToLibrary}
+            className="md-btn-filled text-xs py-1 px-3.5 rounded-full font-bold flex items-center gap-1.5 flex-shrink-0 active:scale-95 transition-transform"
+          >
+            <span className="material-symbols-outlined text-[15px]">bookmark_add</span>
+            <span>{savingToLibrary ? 'Saving...' : 'Save to Library'}</span>
+          </button>
+          <button
+            onClick={() => setDismissedPreviewBanner(true)}
+            className="text-xs opacity-60 hover:opacity-100 p-1 flex-shrink-0 leading-none"
+            title="Dismiss preview banner"
+            aria-label="Dismiss banner"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Toast confirmation when score is saved */}
+      {saveSuccessToast && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 animate-fade border"
+          style={{
+            background: 'var(--md-surface-2)',
+            borderColor: 'var(--md-success-border, rgba(52, 211, 153, 0.4))',
+            color: 'var(--md-success-text, #34D399)',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.6)',
+          }}
+        >
+          <span className="material-symbols-outlined text-[18px]">check_circle</span>
+          <span className="text-xs font-semibold text-white">Score saved to your library!</span>
+        </div>
+      )}
 
       {/* Invisible hover hot-zone at right edge — triggers side rail and controls */}
       {appSettings.autoHideControls && !isAnyPanelOpen && (

@@ -17,6 +17,8 @@ interface ViewerToolbarProps {
   isSettingsOpen?: boolean;
   isBookmarksOpen?: boolean;
   onSaveOffline: () => void;
+  isSavedInLibrary?: boolean;
+  savingToLibrary?: boolean;
   zoom: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -39,6 +41,8 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   file, currentPage, totalPages,
   onPageChange, onBack,
   onSaveOffline,
+  isSavedInLibrary,
+  savingToLibrary = false,
   zoom, onZoomIn, onZoomOut, onZoomReset,
   playbackState, onTogglePlay, onRewind, onBpmChange, onVolumeChange,
   countInEnabled = true, onToggleCountIn,
@@ -146,18 +150,20 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>{file.name}</p>
           {file.source === 'google-drive' && (
-            file.offline ? (
-              <span className="md-chip md-chip-success text-[10px] py-0.5 px-2 flex items-center gap-0.5 flex-shrink-0" title="Saved locally — available offline">
-                <span className="material-symbols-outlined text-[12px] leading-none">check</span> Saved Offline
+            (isSavedInLibrary ?? file.offline) ? (
+              <span className="md-chip md-chip-success text-[10px] py-0.5 px-2 flex items-center gap-0.5 flex-shrink-0" title="Saved locally in your library">
+                <span className="material-symbols-outlined text-[12px] leading-none">check</span> In Library
               </span>
             ) : (
               <button
                 onClick={onSaveOffline}
-                className="flex items-center gap-0.5 text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors flex-shrink-0"
-                style={{ background: 'var(--md-primary-container)', color: 'var(--md-on-primary-container)' }}
-                title="Save copy for offline access"
+                disabled={savingToLibrary}
+                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm transition-all active:scale-95 flex-shrink-0"
+                style={{ background: 'var(--md-primary)', color: 'var(--md-on-primary)' }}
+                title="Save this shared score to your library"
               >
-                <span className="material-symbols-outlined text-[12px] leading-none">save</span> Save Offline
+                <span className="material-symbols-outlined text-[13px] leading-none">bookmark_add</span>
+                <span>{savingToLibrary ? 'Saving...' : 'Save to Library'}</span>
               </button>
             )
           )}

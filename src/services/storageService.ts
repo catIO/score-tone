@@ -80,6 +80,10 @@ export const storageService = {
   // Save metadata (merges with existing record to prevent overwriting bookmarks or other metadata)
   async saveFileMetadata(file: ScoreFile): Promise<void> {
     const existing = await db.files.get(file.id);
+    if (!existing && !file.offline) {
+      // Don't auto-create a library record for previewing unsaved shared scores
+      return;
+    }
     const merged: ScoreFile = {
       ...existing,
       ...file,
