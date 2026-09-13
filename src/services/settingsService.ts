@@ -20,6 +20,8 @@ export interface AppSettings {
   twoPageLandscape: boolean;
   /** Acquire a Screen Wake Lock while a score is open (prevents screen timeout) */
   keepScreenAwake: boolean;
+  /** Show right-hand guitar fingering (p, i, m, a) in MusicXML scores */
+  showRightHandFingering: boolean;
 }
 
 const DEFAULT_FILTERS: FilterSettings = {
@@ -53,7 +55,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   tapZoneWidth: 20,
   autoHideControls: true,
   twoPageLandscape: true,
-  keepScreenAwake: true
+  keepScreenAwake: true,
+  showRightHandFingering: true
 };
 
 const STORAGE_KEY = 'scoretone_settings';

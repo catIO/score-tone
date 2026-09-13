@@ -970,6 +970,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               currentPage={currentPage}
               onPageChange={handlePageChange}
               scrollToLoopTrigger={scrollToLoopTrigger}
+              showRightHandFingering={appSettings.showRightHandFingering}
               onRenderComplete={({ totalPages: pages }) => {
                 setTotalPages(Math.max(1, pages));
               }}

@@ -10,7 +10,7 @@ function isMusicXmlFile(file) {
 }
 
 // Helper: normalizeMusicXmlForOsmd logic test
-function normalizeMusicXmlForOsmd(xml) {
+function normalizeMusicXmlForOsmd(xml, options = {}) {
   let cleanXml = xml;
 
   // 1. Convert hidden rests (print-object="no") to forward elements for OSMD compatibility
@@ -19,10 +19,33 @@ function normalizeMusicXmlForOsmd(xml) {
     return `<forward><duration>${duration}</duration></forward>`;
   });
 
-  // 2. Remove empty <notations></notations> or empty <ornaments/> which can trigger OSMD errors
-  cleanXml = cleanXml.replace(/<notations>\s*<\/notations>/gi, '');
   // 3. Allow dynamic system wrapping
   cleanXml = cleanXml.replace(/new-system\s*=\s*["']yes["']/gi, 'new-system="no"');
+
+  // 4. Handle right-hand guitar fingering (<pluck> or <other-technical> with p, i, m, a, c)
+  const showRightHand = options.showRightHandFingering !== false;
+  cleanXml = cleanXml.replace(/<notations>([\s\S]*?)<\/notations>/gi, (notationsMatch, notationsInner) => {
+    let fixedInner = notationsInner;
+    if (showRightHand) {
+      if (/<(?:pluck|other-technical)/i.test(fixedInner)) {
+        fixedInner = fixedInner.replace(/<(?:pluck|other-technical)(?:\s+[^>]*)?>\s*([pimaPIMAcC])\s*<\/(?:pluck|other-technical)>/gi, (_, finger) => {
+          return `<fingering placement="above">${finger.toLowerCase()}</fingering>`;
+        });
+        if (/<fingering/i.test(fixedInner) && !/<technical[\s>]/i.test(fixedInner)) {
+          fixedInner = `<technical>${fixedInner}</technical>`;
+        }
+      }
+    } else {
+      // Strip right-hand fingerings (p, i, m, a, c) from fingering, pluck, or other-technical
+      fixedInner = fixedInner.replace(/<fingering(?:\s+[^>]*)?>\s*[pimaPIMAcC]\s*<\/fingering>/gi, '');
+      fixedInner = fixedInner.replace(/<(?:pluck|other-technical)(?:\s+[^>]*)?>\s*[pimaPIMAcC]\s*<\/(?:pluck|other-technical)>/gi, '');
+      fixedInner = fixedInner.replace(/<technical>\s*<\/technical>/gi, '');
+    }
+    return `<notations>${fixedInner}</notations>`;
+  });
+
+  // 5. Remove empty <notations></notations> or empty <ornaments/> which can trigger OSMD errors
+  cleanXml = cleanXml.replace(/<notations>\s*<\/notations>/gi, '');
 
   // 3. Fix stray <alter> elements that are not inside <pitch>
   cleanXml = cleanXml.replace(/(<note[^>]*>)([\s\S]*?)(<\/note>)/gi, (fullNote, start, inner, end) => {
@@ -55,7 +78,24 @@ const normalized = normalizeMusicXmlForOsmd(sampleXml);
 assert.ok(normalized.includes('<forward><duration>4</duration></forward>'), 'Hidden rest conversion failed');
 assert.ok(!normalized.includes('<notations></notations>'), 'Empty notations removal failed');
 assert.ok(normalized.includes('new-system="no"'), 'new-system should normalize to "no" to allow responsive dynamic system wrapping');
-console.log('✅ normalizeMusicXmlForOsmd passed!');
+
+const pluckSample = '<note><notations><technical><pluck default-x="6.5">m</pluck></technical></notations></note>';
+const pluckNormalizedDefault = normalizeMusicXmlForOsmd(pluckSample);
+assert.ok(pluckNormalizedDefault.includes('<fingering placement="above">m</fingering>'), 'Pluck conversion to fingering failed (default)');
+
+const pluckNormalizedTrue = normalizeMusicXmlForOsmd(pluckSample, { showRightHandFingering: true });
+assert.ok(pluckNormalizedTrue.includes('<fingering placement="above">m</fingering>'), 'Pluck conversion to fingering failed (explicit true)');
+
+const pluckNormalizedFalse = normalizeMusicXmlForOsmd(pluckSample, { showRightHandFingering: false });
+assert.ok(!pluckNormalizedFalse.includes('<fingering'), 'Fingering should not be present when showRightHandFingering is false');
+assert.ok(!pluckNormalizedFalse.includes('<pluck'), 'Pluck should be removed when showRightHandFingering is false');
+
+// Also test existing fingering element with right-hand letter (e.g. p)
+const existingFingeringSample = '<note><notations><technical><fingering>p</fingering><fingering>1</fingering></technical></notations></note>';
+const existingFiltered = normalizeMusicXmlForOsmd(existingFingeringSample, { showRightHandFingering: false });
+assert.ok(!existingFiltered.includes('<fingering>p</fingering>'), 'Right-hand fingering "p" should be stripped when showRightHandFingering is false');
+assert.ok(existingFiltered.includes('<fingering>1</fingering>'), 'Left-hand fingering "1" should be preserved');
+console.log('✅ normalizeMusicXmlForOsmd passed (including showRightHandFingering toggle)!');
 
 console.log('🧪 Testing isMusicXmlFile...');
 assert.strictEqual(isMusicXmlFile({ name: 'song.xml' }), true);

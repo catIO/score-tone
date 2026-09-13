@@ -17,6 +17,7 @@ interface MusicXmlViewerProps {
   onPageChange?: (page: number) => void;
   onRenderComplete?: (metadata: { totalPages: number }) => void;
   scrollToLoopTrigger?: number;
+  showRightHandFingering?: boolean;
 }
 
 export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
@@ -26,6 +27,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   onPageChange,
   onRenderComplete,
   scrollToLoopTrigger,
+  showRightHandFingering = true,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -172,6 +174,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         drawComposer: true,
         drawMeasureNumbers: true,
         drawCredits: true,
+        drawFingerings: true,
         newSystemFromXML: false,
         newPageFromXML: true,
       });
@@ -181,9 +184,10 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       // Keep measures spacious: max 3 measures per line avoids cramped 16th-note systems
       if (osmd.rules) {
         osmd.rules.RenderXMeasuresPerLineAkaSystem = 3;
+        osmd.rules.RenderFingerings = true;
       }
 
-      const cleanXml = normalizeMusicXmlForOsmd(xmlContent);
+      const cleanXml = normalizeMusicXmlForOsmd(xmlContent, { showRightHandFingering });
       await osmd.load(cleanXml);
 
       osmd.zoom = zoom;
@@ -223,7 +227,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       setRenderError(err.message || 'Failed to render MusicXML score.');
       setLoading(false);
     }
-  }, [xmlContent]);
+  }, [xmlContent, showRightHandFingering]);
 
   // Handle zoom changes smoothly
   useEffect(() => {

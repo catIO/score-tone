@@ -101,10 +101,21 @@ export async function readMusicXmlText(input: Blob | ArrayBuffer | string): Prom
   return xmlString;
 }
 
+export interface MusicXmlNormalizeOptions {
+  /**
+   * Whether to display right-hand guitar fingering (p, i, m, a, c).
+   * Defaults to true.
+   */
+  showRightHandFingering?: boolean;
+}
+
 /**
  * Normalizes MusicXML to ensure clean rendering in OpenSheetMusicDisplay
  */
-export function normalizeMusicXmlForOsmd(xml: string): string {
+export function normalizeMusicXmlForOsmd(
+  xml: string,
+  options: MusicXmlNormalizeOptions = {}
+): string {
   let cleanXml = xml;
 
   // 1. Clean AI generation artifacts & dotted note types
@@ -134,7 +145,29 @@ export function normalizeMusicXmlForOsmd(xml: string): string {
   // 3. Allow dynamic system wrapping to match container width and prevent orphaned single-measure lines
   cleanXml = cleanXml.replace(/new-system\s*=\s*["']yes["']/gi, 'new-system="no"');
 
-  // 4. Remove empty <notations></notations> or empty <ornaments/> which can trigger OSMD errors
+  // 4. Handle right-hand guitar fingering (<pluck> or <other-technical> with p, i, m, a, c)
+  const showRightHand = options.showRightHandFingering !== false;
+  cleanXml = cleanXml.replace(/<notations>([\s\S]*?)<\/notations>/gi, (_match: string, notationsInner: string) => {
+    let fixedInner = notationsInner;
+    if (showRightHand) {
+      if (/<(?:pluck|other-technical)/i.test(fixedInner)) {
+        fixedInner = fixedInner.replace(/<(?:pluck|other-technical)(?:\s+[^>]*)?>\s*([pimaPIMAcC])\s*<\/(?:pluck|other-technical)>/gi, (_match: string, finger: string) => {
+          return `<fingering placement="above">${finger.toLowerCase()}</fingering>`;
+        });
+        if (/<fingering/i.test(fixedInner) && !/<technical[\s>]/i.test(fixedInner)) {
+          fixedInner = `<technical>${fixedInner}</technical>`;
+        }
+      }
+    } else {
+      // Strip right-hand fingerings (p, i, m, a, c) from fingering, pluck, or other-technical
+      fixedInner = fixedInner.replace(/<fingering(?:\s+[^>]*)?>\s*[pimaPIMAcC]\s*<\/fingering>/gi, '');
+      fixedInner = fixedInner.replace(/<(?:pluck|other-technical)(?:\s+[^>]*)?>\s*[pimaPIMAcC]\s*<\/(?:pluck|other-technical)>/gi, '');
+      fixedInner = fixedInner.replace(/<technical>\s*<\/technical>/gi, '');
+    }
+    return `<notations>${fixedInner}</notations>`;
+  });
+
+  // 5. Remove empty <notations></notations> or empty <ornaments/> which can trigger OSMD errors
   cleanXml = cleanXml.replace(/<notations>\s*<\/notations>/gi, '');
   cleanXml = cleanXml.replace(/<ornaments>\s*<\/ornaments>/gi, '');
 

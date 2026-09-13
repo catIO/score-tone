@@ -900,9 +900,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                   {/* Stave lines overlay */}
                   <div className="absolute inset-0 score-cover-staves opacity-60 pointer-events-none" />
 
-                  {/* Faint musical note watermark */}
-                  <div className="absolute right-2 bottom-0 opacity-10 pointer-events-none select-none" style={{ color: 'var(--md-on-surface)' }}>
-                    <Music className="w-24 h-24 transform rotate-12" />
+                  {/* Faint watermark: musical notes for XML, document for PDF */}
+                  <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none select-none" style={{ color: 'var(--md-on-surface)' }}>
+                    {isMusicXmlFile(file) ? (
+                      <Music className="w-20 h-20 transform rotate-12" />
+                    ) : (
+                      <FileText className="w-20 h-20 transform rotate-12" />
+                    )}
                   </div>
 
                   {/* Top Badges Row */}

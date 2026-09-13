@@ -142,6 +142,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
       <Row label="Auto-Hide Menu" description="Hide toolbar until top edge is hovered or tapped">
         <Toggle checked={settings.autoHideControls} onChange={v => set('autoHideControls', v)} />
       </Row>
+      {isMusicXml && (
+        <Row label="Show Right-Hand Fingers" description="Display guitar right-hand fingering (p, i, m, a)">
+          <Toggle checked={settings.showRightHandFingering} onChange={v => set('showRightHandFingering', v)} />
+        </Row>
+      )}
       {!isMusicXml && (
         <Row label="Two-Page Landscape" description="Side-by-side pages in landscape">
           <Toggle checked={settings.twoPageLandscape} onChange={v => set('twoPageLandscape', v)} />
