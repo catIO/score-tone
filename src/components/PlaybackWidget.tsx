@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Play, Pause, SkipBack, ChevronDown, Volume2, VolumeX, Clock, Repeat, Brain, Sparkles } from 'lucide-react';
 import type { PlaybackState } from '../services/audioPlaybackService';
 
@@ -29,6 +30,8 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [popoverPos, setPopoverPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   const prevVolumeRef = useRef<number>(playbackState.volume || 80);
 
   const effectiveLoopPauseSec = loopPauseSeconds !== undefined ? loopPauseSeconds : (playbackState.loopPauseSeconds ?? 0);
@@ -40,17 +43,36 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
     }
   }, [effectiveLoopPauseSec]);
 
-  // Close popover when clicking outside
+  const updatePopoverPos = useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const popoverWidth = Math.min(320, window.innerWidth - 32);
+      const idealLeft = rect.left + rect.width / 2 - popoverWidth / 2;
+      const left = Math.max(16, Math.min(window.innerWidth - popoverWidth - 16, idealLeft));
+      setPopoverPos({
+        top: rect.bottom + 8,
+        left,
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
-    const handleOutsideClick = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+    updatePopoverPos();
+    window.addEventListener('resize', updatePopoverPos);
+    window.addEventListener('scroll', updatePopoverPos, true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
         setIsOpen(false);
       }
     };
-    window.addEventListener('mousedown', handleOutsideClick);
-    return () => window.removeEventListener('mousedown', handleOutsideClick);
-  }, [isOpen]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', updatePopoverPos);
+      window.removeEventListener('scroll', updatePopoverPos, true);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, updatePopoverPos]);
 
   const handleBpmStep = (delta: number) => {
     const nextBpm = Math.max(30, Math.min(240, playbackState.bpm + delta));
@@ -141,7 +163,11 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
 
       {/* BPM & Settings Popover Trigger */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        ref={triggerRef}
+        onClick={() => {
+          updatePopoverPos();
+          setIsOpen(!isOpen);
+        }}
         className={`flex items-center gap-1.5 px-2.5 h-8 rounded-lg text-xs font-semibold transition-all focus:outline-none ${
           isOpen
             ? 'bg-black/10 dark:bg-white/15'
@@ -157,19 +183,35 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
       </button>
 
       {/* Popover Card */}
-      {isOpen && (
-        <>
-          {/* Backdrop to absorb outside clicks and prevent page-down / score clicks */}
+      {isOpen && createPortal(
+        <div className="fixed inset-0 z-[90] pointer-events-auto select-none">
+          {/* Backdrop to absorb outside clicks and prevent score clicks */}
           <div
-            className="fixed inset-0 z-40 bg-transparent"
+            className="fixed inset-0 bg-transparent"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               setIsOpen(false);
             }}
           />
           <div
-            className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-72 sm:w-80 rounded-2xl p-4 z-50 border transition-colors animate-in fade-in zoom-in-95 duration-100"
+            ref={popoverRef}
+            className="fixed w-72 sm:w-80 rounded-2xl p-4 z-[91] border transition-colors animate-in fade-in zoom-in-95 duration-100"
             style={{
+              top: popoverPos.top,
+              left: popoverPos.left,
               background: 'var(--md-surface-1)',
               borderColor: 'var(--md-outline-variant)',
               color: 'var(--md-on-surface)',
@@ -368,7 +410,8 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
             )}
           </div>
         </div>
-      </>
+      </div>,
+      document.body
     )}
   </div>
   );

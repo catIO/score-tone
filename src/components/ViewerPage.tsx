@@ -591,16 +591,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
   };
 
-  const handleToggleCurrentPageBookmark = async () => {
-    const existing = (file.bookmarks || []).find(
-      bm => bm.page === currentPage && bm.type !== 'loop'
-    );
-    if (existing) {
-      await handleDeleteBookmark(existing.id);
-    } else {
-      await handleAddBookmark(`Page ${currentPage}`, currentPage);
-    }
-  };
 
   const handleAddLoopBookmark = async (name: string, loopRange: LoopRange, bpm?: number) => {
     const existing = file.bookmarks || [];
@@ -783,12 +773,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             totalPages={totalPages}
             onPageChange={handlePageChange}
             onBack={onBack}
-            onToggleDisplay={() => { setIsDisplayOpen(p => !p); setIsSettingsOpen(false); setIsBookmarksOpen(false); }}
-            onToggleSettings={() => { setIsSettingsOpen(p => !p); setIsDisplayOpen(false); setIsBookmarksOpen(false); }}
-            onToggleBookmarks={() => { setIsBookmarksOpen(p => !p); setIsDisplayOpen(false); setIsSettingsOpen(false); }}
-            isDisplayOpen={isDisplayOpen}
-            isSettingsOpen={isSettingsOpen}
-            isBookmarksOpen={isBookmarksOpen}
             onSaveOffline={handleSaveToLibrary}
             isSavedInLibrary={isSavedInLibrary}
             savingToLibrary={savingToLibrary}
@@ -806,8 +790,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             loopPauseSeconds={loopPauseSeconds}
             onLoopPauseSecondsChange={handleLoopPauseSecondsChange}
             onToggleLoop={isMusicXml ? handleToggleLoop : undefined}
-            isCurrentPageBookmarked={isCurrentPageBookmarked}
-            onToggleCurrentPageBookmark={handleToggleCurrentPageBookmark}
           />
         </div>
       </div>

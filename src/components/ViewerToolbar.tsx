@@ -10,12 +10,6 @@ interface ViewerToolbarProps {
   totalPages: number;
   onPageChange: (page: number) => void;
   onBack: () => void;
-  onToggleDisplay?: () => void;
-  onToggleSettings?: () => void;
-  onToggleBookmarks?: () => void;
-  isDisplayOpen?: boolean;
-  isSettingsOpen?: boolean;
-  isBookmarksOpen?: boolean;
   onSaveOffline: () => void;
   isSavedInLibrary?: boolean;
   savingToLibrary?: boolean;
@@ -33,8 +27,6 @@ interface ViewerToolbarProps {
   onToggleLoop?: () => void;
   loopPauseSeconds?: number;
   onLoopPauseSecondsChange?: (seconds: number) => void;
-  isCurrentPageBookmarked?: boolean;
-  onToggleCurrentPageBookmark?: () => void;
 }
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
@@ -48,8 +40,6 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   countInEnabled = true, onToggleCountIn,
   onToggleLoop,
   loopPauseSeconds, onLoopPauseSecondsChange,
-  isCurrentPageBookmarked = false,
-  onToggleCurrentPageBookmark,
 }) => {
   const [jumpPage, setJumpPage] = useState(String(currentPage));
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -186,30 +176,6 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
               loopPauseSeconds={loopPauseSeconds}
               onLoopPauseSecondsChange={onLoopPauseSecondsChange}
             />
-            {onToggleCurrentPageBookmark && (
-              <>
-                <div style={{ width: 1, height: 18, background: 'var(--md-outline-variant)', margin: '0 2px' }} />
-                <button
-                  onClick={onToggleCurrentPageBookmark}
-                  className={`md-icon-btn ${isCurrentPageBookmarked ? 'active' : ''}`}
-                  title={isCurrentPageBookmarked ? `Current measure/page bookmarked (Click to remove)` : `Bookmark current position`}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    color: isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
-                  }}
-                >
-                  <span
-                    className="material-symbols-outlined text-[20px] leading-none"
-                    style={{
-                      fontVariationSettings: isCurrentPageBookmarked ? "'FILL' 1" : "'FILL' 0",
-                    }}
-                  >
-                    {isCurrentPageBookmarked ? 'bookmark' : 'bookmark_border'}
-                  </span>
-                </button>
-              </>
-            )}
           </div>
         ) : (
           <div className="flex items-center gap-1">
@@ -259,31 +225,6 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
             >
               <span className="material-symbols-outlined text-[22px] leading-none">chevron_right</span>
             </button>
-
-            {onToggleCurrentPageBookmark && (
-              <>
-                <div style={{ width: 1, height: 18, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
-                <button
-                  onClick={onToggleCurrentPageBookmark}
-                  className={`md-icon-btn ${isCurrentPageBookmarked ? 'active' : ''}`}
-                  title={isCurrentPageBookmarked ? `Page ${currentPage} is bookmarked (Click to remove)` : `Bookmark page ${currentPage}`}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    color: isCurrentPageBookmarked ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
-                  }}
-                >
-                  <span
-                    className="material-symbols-outlined text-[20px] leading-none"
-                    style={{
-                      fontVariationSettings: isCurrentPageBookmarked ? "'FILL' 1" : "'FILL' 0",
-                    }}
-                  >
-                    {isCurrentPageBookmarked ? 'bookmark' : 'bookmark_border'}
-                  </span>
-                </button>
-              </>
-            )}
           </div>
         )}
       </div>

@@ -796,15 +796,27 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         endNotePageIndex: pageIndex,
       });
     } else {
-      // Normal Click: Set IN point at this note and seek playback
-      audioPlaybackService.setInCue(note.timeInBeats, note.measureNum, {
-        x: note.x,
-        topY: note.topY,
-        pageIndex,
-      });
-      audioPlaybackService.seek(note.timeInBeats);
+      // If loop mode is currently active (or active loop has both start and end),
+      // and user clicks within the active loop, seek playback within loop without destroying it!
+      const activeLoop = playbackState.loopRange;
+      const isLoopActive = Boolean(
+        activeLoop &&
+        (playbackState.loopEnabled || (activeLoop.endMeasure !== undefined && activeLoop.startBeat !== undefined))
+      );
+
+      if (isLoopActive && activeLoop && note.timeInBeats >= activeLoop.startBeat && note.timeInBeats < activeLoop.endBeat) {
+        audioPlaybackService.seek(note.timeInBeats);
+      } else {
+        // Normal Click: Set IN point at this note and seek playback
+        audioPlaybackService.setInCue(note.timeInBeats, note.measureNum, {
+          x: note.x,
+          topY: note.topY,
+          pageIndex,
+        });
+        audioPlaybackService.seek(note.timeInBeats);
+      }
     }
-  }, [playbackState.loopRange, findClosestGraphicNote, onPageChange, currentPage]);
+  }, [playbackState.loopRange, playbackState.loopEnabled, findClosestGraphicNote, onPageChange, currentPage]);
 
   return (
     <div
