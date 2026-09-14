@@ -74,9 +74,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   const scale = useMemo(() => {
     if (!pageSize) return 1.0;
 
-    const gap = 32; // page margins/padding
-    const availableWidth = isTwoPageActive ? (containerSize.width - gap * 3) / 2 : containerSize.width - gap * 2;
-    const availableHeight = containerSize.height - gap * 2;
+    const gap = 16; // horizontal gap between pages in two-page mode
+    const availableWidth = isTwoPageActive ? (containerSize.width - gap * 3) / 2 : containerSize.width;
+    const availableHeight = containerSize.height;
 
     if (fitMode === 'width') {
       return (availableWidth / pageSize.width) * zoom;
@@ -134,7 +134,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     // Estimate aspect ratio to prevent layouts shifting on lazy rendering
     const size = pageSizes[pageNum] || pageSize || { width: 612, height: 792, aspectRatio: 0.77 };
-    const width = (fitMode === 'width' ? containerSize.width - 64 : (containerSize.height - 64) * size.aspectRatio) * zoom;
+    const width = (fitMode === 'width' ? containerSize.width : containerSize.height * size.aspectRatio) * zoom;
     const height = width / size.aspectRatio;
 
     return (
@@ -181,7 +181,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     >
       {scrollMode === 'single' ? (
         <div
-          className="flex gap-8 py-6 px-4"
+          className="flex gap-4 p-0"
           style={{
             margin: 'auto', // Centers when page fits, aligns to top-left when zoomed/overflowing so all parts can be scrolled to
             alignItems: 'center',

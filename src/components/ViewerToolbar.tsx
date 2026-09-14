@@ -122,9 +122,9 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   };
 
   return (
-    <div className="md-top-bar select-none" style={{ paddingLeft: 12, paddingRight: 12 }}>
+    <div className="md-top-bar select-none px-6 sm:px-10 md:px-16 lg:px-24 xl:px-32">
       {/* Left: explicit library back button + score title + offline badge */}
-      <div className="flex items-center gap-2 flex-1 min-w-0 mr-3">
+      <div className="flex items-center gap-2 flex-1 min-w-0 mr-3 h-9">
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all hover:bg-white/10 active:scale-95 flex-shrink-0"
@@ -143,29 +143,23 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-sm font-semibold truncate" style={{ color: 'var(--md-on-surface)' }}>{file.name}</p>
-          {file.source === 'google-drive' && (
-            (isSavedInLibrary ?? file.offline) ? (
-              <span className="md-chip md-chip-success text-[10px] py-0.5 px-2 flex items-center gap-0.5 flex-shrink-0" title="Saved locally in your library">
-                <span className="material-symbols-outlined text-[12px] leading-none">check</span> In Library
-              </span>
-            ) : (
-              <button
-                onClick={onSaveOffline}
-                disabled={savingToLibrary}
-                className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm transition-all active:scale-95 flex-shrink-0"
-                style={{ background: 'var(--md-primary)', color: 'var(--md-on-primary)' }}
-                title="Save this shared score to your library"
-              >
-                <span className="material-symbols-outlined text-[13px] leading-none">bookmark_add</span>
-                <span>{savingToLibrary ? 'Saving...' : 'Save to Library'}</span>
-              </button>
-            )
+          {file.source === 'google-drive' && !(isSavedInLibrary ?? file.offline) && (
+            <button
+              onClick={onSaveOffline}
+              disabled={savingToLibrary}
+              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm transition-all active:scale-95 flex-shrink-0"
+              style={{ background: 'var(--md-primary)', color: 'var(--md-on-primary)' }}
+              title="Save this shared score to your library"
+            >
+              <span className="material-symbols-outlined text-[13px] leading-none">bookmark_add</span>
+              <span>{savingToLibrary ? 'Saving...' : 'Save to Library'}</span>
+            </button>
           )}
         </div>
       </div>
 
       {/* Center: Playback Widget (MusicXML) OR Page Navigation + 1-Click Bookmark (PDF) */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 flex-shrink-0 h-9">
         {isMusicXmlFile(file) && playbackState && onTogglePlay && onRewind && onBpmChange && onVolumeChange ? (
           <div className="flex items-center gap-2">
             <PlaybackWidget
@@ -234,7 +228,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
       </div>
 
       {/* Right: Score viewing controls only (Zoom, Share, Fullscreen) */}
-      <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+      <div className="flex items-center gap-1 flex-shrink-0 ml-2 h-9">
         {/* Zoom controls */}
         <button
           onClick={onZoomOut}

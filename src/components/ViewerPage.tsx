@@ -62,7 +62,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   // Active filter state
   const [filters, setFilters] = useState<FilterSettings>(appSettings.customSliders);
-  const [zoom, setZoom] = useState<number>(1.0);
+  const [zoom, setZoom] = useState<number>(() => file.zoom ?? 1.0);
   const [scrollToLoopTrigger, setScrollToLoopTrigger] = useState<number>(0);
 
   const [isSavedInLibrary, setIsSavedInLibrary] = useState<boolean>(Boolean(file.offline));
@@ -163,6 +163,26 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const zoomIn = useCallback(() => setZoom(z => Math.min(3.0, z + 0.1)), []);
   const zoomOut = useCallback(() => setZoom(z => Math.max(0.6, z - 0.1)), []);
   const zoomReset = useCallback(() => setZoom(1.0), []);
+
+  // Keep zoomRef up-to-date for gesture handlers
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  // Sync zoom when active score changes
+  useEffect(() => {
+    setZoom(file.zoom ?? 1.0);
+  }, [file.id]);
+
+  // Persist score-specific zoom level (debounced)
+  useEffect(() => {
+    if (file.zoom === zoom) return;
+    const timer = window.setTimeout(() => {
+      file.zoom = zoom;
+      storageService.saveFileMetadata({ ...file, zoom }).catch(() => {});
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [zoom, file]);
 
   // Update browser tab title
   useEffect(() => {
@@ -352,6 +372,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         size: blobToSave.size,
         lastOpened: Date.now(),
         lastPage: currentPage,
+        zoom,
       };
       await storageService.cacheFileOffline(updatedFile, blobToSave);
       file.offline = true;
@@ -975,8 +996,15 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       />
 
       {/* Score Viewport: MusicXML or PDF */}
-      <div className="w-full h-full relative"
-        style={{ '--pdf-bg': filters.backgroundColor, '--pdf-mix-blend': 'multiply' } as React.CSSProperties}>
+      <div
+        className="w-full relative"
+        style={{
+          top: appSettings.autoHideControls ? 0 : 64,
+          height: appSettings.autoHideControls ? '100%' : 'calc(100% - 64px)',
+          '--pdf-bg': filters.backgroundColor,
+          '--pdf-mix-blend': 'multiply',
+        } as React.CSSProperties}
+      >
         {/* Discreet bookmark indicator ribbon on bookmarked pages */}
         {isCurrentPageBookmarked && (
           <button

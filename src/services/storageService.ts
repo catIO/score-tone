@@ -26,6 +26,7 @@ export interface ScoreFile {
   thumbnail?: string; // base64 or link from Drive
   bookmarks?: Bookmark[];
   tempo?: number; // saved playback BPM
+  zoom?: number; // saved per-score zoom level
 }
 
 export function isMusicXmlFile(file?: Partial<ScoreFile> | { name?: string; fileType?: string } | null): boolean {
@@ -123,6 +124,7 @@ export const storageService = {
       ...file,
       bookmarks: file.bookmarks !== undefined ? file.bookmarks : existing?.bookmarks,
       lastPage: file.lastPage ?? existing?.lastPage ?? 1,
+      zoom: file.zoom !== undefined ? file.zoom : existing?.zoom,
     };
     await db.files.put(merged);
   },

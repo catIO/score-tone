@@ -50,7 +50,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   lastPreset: 'Sepia',
   customSliders: SEPIA_FILTERS,
-  fitMode: 'width',
+  fitMode: 'height',
   scrollMode: 'single',
   tapZoneWidth: 20,
   autoHideControls: true,
