@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, AlertTriangle, ArrowLeft, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ScoreFile, Bookmark } from '../services/storageService';
 import { storageService, isMusicXmlFile } from '../services/storageService';
@@ -12,10 +12,13 @@ import MusicXmlViewer from './MusicXmlViewer';
 import DisplayControls from './DisplayControls';
 import SettingsPanel from './SettingsPanel';
 import BookmarksPanel from './BookmarksPanel';
+import AnnotationDrawer from './AnnotationDrawer';
 import ViewerSideRail from './ViewerSideRail';
 import SvgFilters from './SvgFilters';
 import { googleDriveService } from '../services/googleDriveService';
 import { useWakeLock } from '../hooks/useWakeLock';
+import { useAnnotationState } from '../hooks/useAnnotationState';
+import type { PageAnnotationProps } from './PdfPageCanvas';
 
 interface ViewerPageProps {
   file: ScoreFile;
@@ -90,8 +93,61 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const isCurrentLoopBookmarked = Boolean(currentLoopBookmark);
 
+  // Annotation state and storage
+  const annotationState = useAnnotationState(file.id);
+  const {
+    isAnnotating,
+    setIsAnnotating,
+    activeTool: annotTool,
+    setActiveTool: setAnnotTool,
+    activeSizeIndex: annotSizeIndex,
+    setActiveSizeIndex: setAnnotSizeIndex,
+    activeColor: annotColor,
+    setActiveColor: setAnnotColor,
+    currentStrokeSize,
+    pageStrokes,
+    loadPageStrokes,
+    addStroke,
+    removeStrokes,
+    undo: undoAnnotation,
+    redo: redoAnnotation,
+    clearPage: clearPageAnnotations,
+    canUndo: canUndoAnnotation,
+    canRedo: canRedoAnnotation,
+  } = annotationState;
+
+  // Load annotations for visible pages
+  useEffect(() => {
+    loadPageStrokes(currentPage);
+    if (appSettings.twoPageLandscape) {
+      loadPageStrokes(currentPage + 1);
+    }
+  }, [currentPage, loadPageStrokes, appSettings.twoPageLandscape]);
+
+  const handleToggleAnnotate = useCallback(() => {
+    setIsAnnotating(prev => {
+      const next = !prev;
+      if (next) {
+        setIsDisplayOpen(false);
+        setIsSettingsOpen(false);
+        setIsBookmarksOpen(false);
+      }
+      return next;
+    });
+  }, [setIsAnnotating]);
+
+  const annotationProps: PageAnnotationProps = useMemo(() => ({
+    isAnnotating,
+    activeTool: annotTool,
+    activeColor: annotColor,
+    activeSize: currentStrokeSize,
+    pageStrokes,
+    onAddStroke: addStroke,
+    onRemoveStrokes: removeStrokes,
+  }), [isAnnotating, annotTool, annotColor, currentStrokeSize, pageStrokes, addStroke, removeStrokes]);
+
   const bookmarksCount = (file.bookmarks || []).length;
-  const isAnyPanelOpen = isBookmarksOpen || isDisplayOpen || isSettingsOpen;
+  const isAnyPanelOpen = isBookmarksOpen || isDisplayOpen || isSettingsOpen || isAnnotating;
 
   const hideTimerRef = useRef<number | null>(null);
   // Tracks last page-turn timestamp for Bluetooth pedal debouncing
@@ -386,6 +442,29 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         return;
       }
 
+      // Annotation mode keyboard shortcuts
+      if (isAnnotating) {
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redoAnnotation(currentPage);
+          } else {
+            undoAnnotation(currentPage);
+          }
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || e.key === 'Y')) {
+          e.preventDefault();
+          redoAnnotation(currentPage);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setIsAnnotating(false);
+          return;
+        }
+      }
+
       // MusicXML playback shortcuts
       if (isMusicXml) {
         if (e.key === ' ' || e.code === 'Space') {
@@ -528,6 +607,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
+    if (isAnnotating) return; // Do not turn pages or consume taps while in drawing mode
     const target = e.target as HTMLElement;
 
     // Click outside sidebars to close them
@@ -790,6 +870,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             loopPauseSeconds={loopPauseSeconds}
             onLoopPauseSecondsChange={handleLoopPauseSecondsChange}
             onToggleLoop={isMusicXml ? handleToggleLoop : undefined}
+            isAnnotating={isAnnotating}
+            onToggleAnnotate={handleToggleAnnotate}
           />
         </div>
       </div>
@@ -882,7 +964,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           setIsSettingsOpen(p => !p);
           setIsDisplayOpen(false);
           setIsBookmarksOpen(false);
+          setIsAnnotating(false);
         }}
+        isAnnotating={isAnnotating}
+        onToggleAnnotate={handleToggleAnnotate}
         visible={!appSettings.autoHideControls || toolbarVisible || isAnyPanelOpen}
         isAnyPanelOpen={isAnyPanelOpen}
         onMouseEnter={handleHotZoneEnter}
@@ -956,6 +1041,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               onRenderComplete={({ totalPages: pages }) => {
                 setTotalPages(Math.max(1, pages));
               }}
+              annotationProps={annotationProps}
             />
           ) : (
             pdfDoc && (
@@ -968,6 +1054,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
                 twoPageLandscape={appSettings.twoPageLandscape}
                 onTotalPages={setTotalPages}
                 zoom={zoom}
+                annotationProps={annotationProps}
               />
             )
           )}
@@ -1046,6 +1133,24 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           isMusicXml={isMusicXml}
         />
       </div>
+
+      {/* Annotation Drawer sidebar */}
+      <AnnotationDrawer
+        isOpen={isAnnotating}
+        onClose={() => setIsAnnotating(false)}
+        activeTool={annotTool}
+        onSelectTool={setAnnotTool}
+        activeSizeIndex={annotSizeIndex}
+        onSelectSizeIndex={setAnnotSizeIndex}
+        activeColor={annotColor}
+        onSelectColor={setAnnotColor}
+        onUndo={() => undoAnnotation(currentPage)}
+        onRedo={() => redoAnnotation(currentPage)}
+        onClearPage={() => clearPageAnnotations(currentPage)}
+        canUndo={canUndoAnnotation(currentPage)}
+        canRedo={canRedoAnnotation(currentPage)}
+        currentPage={currentPage}
+      />
 
       {/* Subtle Floating Edge Navigation Chevrons */}
       {totalPages > 1 && (

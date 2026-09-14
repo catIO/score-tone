@@ -1,6 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
 import { Loader2 } from 'lucide-react';
+import PageAnnotationCanvas from './PageAnnotationCanvas';
+import type { AnnotationStroke } from '../services/storageService';
+import type { CurrentTool } from '../hooks/useAnnotationState';
+
+export interface PageAnnotationProps {
+  isAnnotating: boolean;
+  activeTool: CurrentTool;
+  activeColor: string;
+  activeSize: number;
+  pageStrokes: Record<number, AnnotationStroke[]>;
+  onAddStroke: (pageNumber: number, stroke: AnnotationStroke) => void;
+  onRemoveStrokes: (pageNumber: number, strokeIds: string[]) => void;
+}
 
 interface PdfPageCanvasProps {
   pdfDoc: PDFDocumentProxy;
@@ -9,6 +22,7 @@ interface PdfPageCanvasProps {
   rotate?: number;
   onRenderSuccess?: () => void;
   onRenderError?: (error: unknown) => void;
+  annotationProps?: PageAnnotationProps;
 }
 
 export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
@@ -17,7 +31,8 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
   scale,
   rotate = 0,
   onRenderSuccess,
-  onRenderError
+  onRenderError,
+  annotationProps,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rendering, setRendering] = useState(true);
@@ -67,6 +82,18 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
         </div>
       )}
       <canvas ref={canvasRef} className="block" />
+      {annotationProps && (
+        <PageAnnotationCanvas
+          pageNumber={pageNumber}
+          strokes={annotationProps.pageStrokes[pageNumber] || []}
+          isAnnotating={annotationProps.isAnnotating}
+          activeTool={annotationProps.activeTool}
+          activeColor={annotationProps.activeColor}
+          activeSize={annotationProps.activeSize}
+          onAddStroke={annotationProps.onAddStroke}
+          onRemoveStrokes={annotationProps.onRemoveStrokes}
+        />
+      )}
     </div>
   );
 };

@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { normalizeMusicXmlForOsmd } from '../services/musicXmlService';
 import { audioPlaybackService, type PlaybackState } from '../services/audioPlaybackService';
 import { Loader2, AlertCircle } from 'lucide-react';
+import PageAnnotationCanvas from './PageAnnotationCanvas';
+import type { PageAnnotationProps } from './PdfPageCanvas';
 
 // Declare OSMD global if loaded via script tag
 declare global {
@@ -18,6 +20,7 @@ interface MusicXmlViewerProps {
   onRenderComplete?: (metadata: { totalPages: number }) => void;
   scrollToLoopTrigger?: number;
   showRightHandFingering?: boolean;
+  annotationProps?: PageAnnotationProps;
 }
 
 export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
@@ -28,8 +31,10 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   onRenderComplete,
   scrollToLoopTrigger,
   showRightHandFingering = true,
+  annotationProps,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const osmdRef = useRef<any>(null);
   const onRenderCompleteRef = useRef(onRenderComplete);
@@ -38,6 +43,44 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
   const [loading, setLoading] = useState(true);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<PlaybackState>(audioPlaybackService.getState());
+  const [pageBounds, setPageBounds] = useState<{ pageNumber: number; top: number; left: number; width: number; height: number }[]>([]);
+
+  const updatePageBounds = useCallback(() => {
+    if (!wrapperRef.current || !containerRef.current) return;
+    const svgs = containerRef.current.querySelectorAll('svg');
+    if (svgs.length === 0) {
+      setPageBounds(prev => (prev.length === 0 ? prev : []));
+      return;
+    }
+    const wrapperRect = wrapperRef.current.getBoundingClientRect();
+    const bounds = Array.from(svgs).map((svg, idx) => {
+      const rect = svg.getBoundingClientRect();
+      return {
+        pageNumber: idx + 1,
+        top: rect.top - wrapperRect.top,
+        left: rect.left - wrapperRect.left,
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    });
+
+    setPageBounds(prev => {
+      if (
+        prev.length === bounds.length &&
+        prev.every(
+          (p, i) =>
+            p.pageNumber === bounds[i].pageNumber &&
+            Math.abs(p.top - bounds[i].top) < 1 &&
+            Math.abs(p.left - bounds[i].left) < 1 &&
+            Math.abs(p.width - bounds[i].width) < 1 &&
+            Math.abs(p.height - bounds[i].height) < 1
+        )
+      ) {
+        return prev;
+      }
+      return bounds;
+    });
+  }, []);
 
   // Helper: Retrieve graphical measure bounds from OSMD GraphicSheet
   const getGraphicMeasure = useCallback((targetMeasureNum: number) => {
@@ -217,6 +260,8 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         onRenderCompleteRef.current({ totalPages: pageCount });
       }
 
+      setTimeout(updatePageBounds, 50);
+
       if (audioPlaybackService.getLoopRange()) {
         setTimeout(() => {
           scrollToInPointRef.current?.();
@@ -245,11 +290,23 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         if (onRenderCompleteRef.current && osmdRef.current.GraphicSheet?.MusicPages) {
           onRenderCompleteRef.current({ totalPages: osmdRef.current.GraphicSheet.MusicPages.length });
         }
+        setTimeout(updatePageBounds, 50);
       } catch (err) {
         console.warn('Error adjusting zoom on OSMD:', err);
       }
     }
-  }, [zoom, loading]);
+  }, [zoom, loading, updatePageBounds]);
+
+  // Keep page overlay bounds updated on wrapper resize
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      updatePageBounds();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [updatePageBounds]);
 
   const lastScrolledPageRef = useRef<number>(currentPage);
 
@@ -870,14 +927,50 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       {/* Sheet Music Score Paper Page */}
       <div className="w-full flex flex-col items-center py-6 px-2 sm:px-6">
         <div
-          ref={containerRef}
-          onClick={handleScoreClick}
-          className="osmd-score-canvas w-full flex flex-col items-center justify-center transition-all"
+          ref={wrapperRef}
+          className="relative w-full flex flex-col items-center justify-center"
           style={{
             maxWidth: '920px',
             boxSizing: 'border-box',
           }}
-        />
+        >
+          {/* OSMD DOM host - strictly contains zero React children */}
+          <div
+            ref={containerRef}
+            onClick={annotationProps?.isAnnotating ? undefined : handleScoreClick}
+            className="osmd-score-canvas w-full flex flex-col items-center justify-center transition-all"
+            style={{
+              maxWidth: '920px',
+              boxSizing: 'border-box',
+            }}
+          />
+
+          {/* Annotation Overlays over each SVG page - rendered as siblings outside OSMD container */}
+          {annotationProps && pageBounds.map((b) => (
+            <div
+              key={b.pageNumber}
+              style={{
+                position: 'absolute',
+                top: b.top,
+                left: b.left,
+                width: b.width,
+                height: b.height,
+                pointerEvents: annotationProps.isAnnotating ? 'auto' : 'none',
+              }}
+            >
+              <PageAnnotationCanvas
+                pageNumber={b.pageNumber}
+                strokes={annotationProps.pageStrokes[b.pageNumber] || []}
+                isAnnotating={annotationProps.isAnnotating}
+                activeTool={annotationProps.activeTool}
+                activeColor={annotationProps.activeColor}
+                activeSize={annotationProps.activeSize}
+                onAddStroke={annotationProps.onAddStroke}
+                onRemoveStrokes={annotationProps.onRemoveStrokes}
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

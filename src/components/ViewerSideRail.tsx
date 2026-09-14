@@ -10,6 +10,8 @@ interface ViewerSideRailProps {
   onToggleDisplay: () => void;
   isSettingsOpen: boolean;
   onToggleSettings: () => void;
+  isAnnotating?: boolean;
+  onToggleAnnotate?: () => void;
   visible: boolean;
   isAnyPanelOpen: boolean;
   onMouseEnter?: () => void;
@@ -26,6 +28,8 @@ export const ViewerSideRail: React.FC<ViewerSideRailProps> = ({
   onToggleDisplay,
   isSettingsOpen,
   onToggleSettings,
+  isAnnotating = false,
+  onToggleAnnotate,
   visible,
   isAnyPanelOpen,
   onMouseEnter,
@@ -92,6 +96,30 @@ export const ViewerSideRail: React.FC<ViewerSideRailProps> = ({
           </span>
         )}
       </div>
+
+      {/* Annotations Toggle */}
+      {onToggleAnnotate && (
+        <button
+          onClick={onToggleAnnotate}
+          className={`md-icon-btn ${isAnnotating ? 'active' : ''}`}
+          title={isAnnotating ? 'Close Annotations (Draw)' : 'Annotate Score (Draw)'}
+          style={{
+            width: 40,
+            height: 40,
+            color: isAnnotating ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+            backgroundColor: isAnnotating ? 'rgba(59, 130, 246, 0.15)' : undefined,
+          }}
+        >
+          <span
+            className="material-symbols-outlined text-[20px] leading-none"
+            style={{
+              fontVariationSettings: isAnnotating ? "'FILL' 1" : "'FILL' 0",
+            }}
+          >
+            edit_note
+          </span>
+        </button>
+      )}
 
       {/* Page Tone & Display Controls Toggle */}
       <button

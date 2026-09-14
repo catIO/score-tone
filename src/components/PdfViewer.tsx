@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { PDFDocumentProxy, PageViewportSize } from '../services/pdfService';
 import { pdfService } from '../services/pdfService';
-import PdfPageCanvas from './PdfPageCanvas';
+import PdfPageCanvas, { type PageAnnotationProps } from './PdfPageCanvas';
 
 interface PdfViewerProps {
   pdfDoc: PDFDocumentProxy;
@@ -12,6 +12,7 @@ interface PdfViewerProps {
   twoPageLandscape: boolean;
   onTotalPages: (total: number) => void;
   zoom: number;
+  annotationProps?: PageAnnotationProps;
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -22,7 +23,8 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   scrollMode,
   twoPageLandscape,
   onTotalPages,
-  zoom
+  zoom,
+  annotationProps,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 1000 });
@@ -147,6 +149,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             pdfDoc={pdfDoc}
             pageNumber={pageNum}
             scale={scale}
+            annotationProps={annotationProps}
           />
         ) : (
           <div
@@ -192,6 +195,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             pdfDoc={pdfDoc}
             pageNumber={currentPage}
             scale={scale}
+            annotationProps={annotationProps}
           />
 
           {isTwoPageActive && currentPage + 1 <= totalPages && (
@@ -199,6 +203,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               pdfDoc={pdfDoc}
               pageNumber={currentPage + 1}
               scale={scale}
+              annotationProps={annotationProps}
             />
           )}
         </div>

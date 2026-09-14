@@ -54,10 +54,38 @@ export interface CustomPreset {
   inkDarkness: number;
 }
 
+export type AnnotationTool = 'pen' | 'highlighter';
+
+export interface StrokePoint {
+  x: number; // 0.0 to 1.0 relative to page width
+  y: number; // 0.0 to 1.0 relative to page height
+  p?: number; // Pointer pressure (0.0 to 1.0)
+}
+
+export interface AnnotationStroke {
+  id: string;
+  tool: AnnotationTool;
+  color: string;
+  size: number;
+  points: StrokePoint[];
+  createdAt: number;
+}
+
+export interface PageAnnotationRecord {
+  id?: string; // UUID for Supabase sync
+  userId?: string; // Future Supabase auth user_id
+  fileId: string;
+  pageNumber: number;
+  strokes: AnnotationStroke[];
+  updatedAt: number;
+  syncStatus?: 'synced' | 'pending' | 'local_only';
+}
+
 class ScoreToneDatabase extends Dexie {
   files!: Table<ScoreFile, string>;
   fileData!: Table<ScoreFileData, string>;
   customPresets!: Table<CustomPreset, string>;
+  annotations!: Table<PageAnnotationRecord, [string, number]>;
 
   constructor() {
     super('ScoreToneDatabase');
@@ -65,6 +93,12 @@ class ScoreToneDatabase extends Dexie {
       files: 'id, name, source, lastOpened, offline',
       fileData: 'fileId',
       customPresets: 'id, name'
+    });
+    this.version(2).stores({
+      files: 'id, name, source, lastOpened, offline',
+      fileData: 'fileId',
+      customPresets: 'id, name',
+      annotations: '[fileId+pageNumber], fileId, pageNumber, updatedAt'
     });
   }
 }
@@ -113,11 +147,12 @@ export const storageService = {
     });
   },
 
-  // Remove file completely (metadata + blob)
+  // Remove file completely (metadata + blob + annotations)
   async deleteFile(fileId: string): Promise<void> {
-    await db.transaction('rw', [db.files, db.fileData], async () => {
+    await db.transaction('rw', [db.files, db.fileData, db.annotations], async () => {
       await db.files.delete(fileId);
       await db.fileData.delete(fileId);
+      await db.annotations.where('fileId').equals(fileId).delete();
     });
   },
 

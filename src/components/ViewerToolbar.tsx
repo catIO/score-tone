@@ -27,6 +27,8 @@ interface ViewerToolbarProps {
   onToggleLoop?: () => void;
   loopPauseSeconds?: number;
   onLoopPauseSecondsChange?: (seconds: number) => void;
+  isAnnotating?: boolean;
+  onToggleAnnotate?: () => void;
 }
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
@@ -40,6 +42,8 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   countInEnabled = true, onToggleCountIn,
   onToggleLoop,
   loopPauseSeconds, onLoopPauseSecondsChange,
+  isAnnotating = false,
+  onToggleAnnotate,
 }) => {
   const [jumpPage, setJumpPage] = useState(String(currentPage));
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -260,6 +264,31 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
         >
           <span className="material-symbols-outlined text-[20px] leading-none">zoom_in</span>
         </button>
+
+        <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
+
+        {/* Annotate / Freehand Drawing toggle */}
+        {onToggleAnnotate && (
+          <button
+            onClick={onToggleAnnotate}
+            className={`md-icon-btn ${isAnnotating ? 'active' : ''}`}
+            title={isAnnotating ? 'Exit Annotation Mode' : 'Annotate Score (Pen & Highlighter)'}
+            style={{
+              width: 36,
+              height: 36,
+              color: isAnnotating ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
+              backgroundColor: isAnnotating ? 'rgba(59, 130, 246, 0.15)' : undefined,
+              borderColor: isAnnotating ? 'rgba(59, 130, 246, 0.4)' : undefined,
+            }}
+          >
+            <span
+              className="material-symbols-outlined text-[20px] leading-none"
+              style={{ fontVariationSettings: isAnnotating ? "'FILL' 1" : "'FILL' 0" }}
+            >
+              edit_note
+            </span>
+          </button>
+        )}
 
         <div style={{ width: 1, height: 20, background: 'var(--md-outline-variant)', margin: '0 4px' }} />
 
