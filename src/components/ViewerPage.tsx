@@ -78,7 +78,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const isLoopActive = Boolean(
     isMusicXml &&
     activeLoopRange &&
-    (playbackState.loopEnabled || activeLoopRange.endMeasure !== undefined)
+    (playbackState.loopEnabled || playbackState.loopPauseActive)
   );
 
   const currentLoopBookmark = isLoopActive && activeLoopRange
@@ -92,6 +92,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     : undefined;
 
   const isCurrentLoopBookmarked = Boolean(currentLoopBookmark);
+
+  const loopDisplayName = currentLoopBookmark
+    ? currentLoopBookmark.name
+    : activeLoopRange?.startMeasure && activeLoopRange?.endMeasure
+    ? `m. ${activeLoopRange.startMeasure}–${activeLoopRange.endMeasure}`
+    : 'Loop';
 
   // Annotation state and storage
   const annotationState = useAnnotationState(file.id);
@@ -148,6 +154,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const bookmarksCount = (file.bookmarks || []).length;
   const isAnyPanelOpen = isBookmarksOpen || isDisplayOpen || isSettingsOpen || isAnnotating;
+  const showFloatingLoopPill = Boolean(
+    appSettings.autoHideControls &&
+    !toolbarVisible &&
+    !isAnyPanelOpen &&
+    isLoopActive
+  );
 
   const hideTimerRef = useRef<number | null>(null);
   // Tracks last page-turn timestamp for Bluetooth pedal debouncing
@@ -1033,27 +1045,46 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           </button>
         )}
 
-        {/* Discreet loop bookmark indicator ribbon when active loop is bookmarked */}
-        {isCurrentLoopBookmarked && currentLoopBookmark && (
+        {/* Floating loop indicator pill with countdown timer when auto-hide is on and menu is hidden */}
+        {showFloatingLoopPill && (
           <button
             onClick={() => {
               setIsBookmarksOpen(true);
               setIsDisplayOpen(false);
               setIsSettingsOpen(false);
             }}
-            className="absolute top-2 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95"
+            className={`absolute top-2.5 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95 ${
+              playbackState.loopPauseActive ? 'animate-pulse' : ''
+            }`}
             style={{
-              right: isCurrentPageBookmarked ? 96 : 16,
-              background: 'rgba(234, 88, 12, 0.22)',
-              border: '1px solid rgba(234, 88, 12, 0.5)',
+              right: isCurrentPageBookmarked ? 100 : 16,
+              background: playbackState.loopPauseActive
+                ? 'rgba(245, 158, 11, 0.28)'
+                : 'rgba(234, 88, 12, 0.22)',
+              border: playbackState.loopPauseActive
+                ? '1px solid rgba(245, 158, 11, 0.6)'
+                : '1px solid rgba(234, 88, 12, 0.5)',
               backdropFilter: 'blur(8px)',
-              color: '#fb923c',
+              WebkitBackdropFilter: 'blur(8px)',
+              color: playbackState.loopPauseActive ? '#fcd34d' : '#fb923c',
               boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
             }}
-            title={`Loop "${currentLoopBookmark.name}" is bookmarked — click to view bookmarks`}
+            title={
+              playbackState.loopPauseActive
+                ? `Next loop in ${playbackState.loopPauseRemaining ?? 0}s — click to view bookmarks`
+                : playbackState.loopPauseSeconds
+                ? `Loop "${loopDisplayName}" is active (${playbackState.loopPauseSeconds}s pause between loops) — click to view bookmarks`
+                : `Loop "${loopDisplayName}" is active — click to view bookmarks`
+            }
           >
-            <Repeat className="w-3.5 h-3.5 text-orange-400" />
-            <span className="text-[11px] font-bold tracking-wide">{currentLoopBookmark.name}</span>
+            {playbackState.loopPauseActive ? (
+              <span className="font-mono font-bold text-xs tabular-nums text-amber-900 dark:text-amber-200 bg-amber-500/30 px-1.5 py-0.5 rounded-full border border-amber-500/40">
+                {playbackState.loopPauseRemaining ?? 0}s
+              </span>
+            ) : (
+              <Repeat className="w-3.5 h-3.5 text-orange-400" />
+            )}
+            <span className="text-[11px] font-bold tracking-wide">{loopDisplayName}</span>
           </button>
         )}
         <div style={tintStyle} />
