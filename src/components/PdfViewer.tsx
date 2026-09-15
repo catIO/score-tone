@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { PDFDocumentProxy, PageViewportSize } from '../services/pdfService';
 import { pdfService } from '../services/pdfService';
+import type { FilterSettings } from '../services/settingsService';
 import PdfPageCanvas, { type PageAnnotationProps } from './PdfPageCanvas';
 
 interface PdfViewerProps {
@@ -13,6 +14,7 @@ interface PdfViewerProps {
   onTotalPages: (total: number) => void;
   zoom: number;
   annotationProps?: PageAnnotationProps;
+  filters?: FilterSettings;
 }
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -25,6 +27,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   onTotalPages,
   zoom,
   annotationProps,
+  filters,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 1000 });
@@ -150,6 +153,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             pageNumber={pageNum}
             scale={scale}
             annotationProps={annotationProps}
+            filters={filters}
           />
         ) : (
           <div
@@ -175,7 +179,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       tabIndex={-1}
       className={`w-full h-full flex flex-col select-none outline-none ${overflowClass}`}
       style={{
-        backgroundColor: 'var(--pdf-bg)',
+        backgroundColor: '#121212',
         transition: 'background-color var(--transition-md)'
       }}
     >
@@ -196,6 +200,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             pageNumber={currentPage}
             scale={scale}
             annotationProps={annotationProps}
+            filters={filters}
           />
 
           {isTwoPageActive && currentPage + 1 <= totalPages && (
@@ -204,6 +209,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               pageNumber={currentPage + 1}
               scale={scale}
               annotationProps={annotationProps}
+              filters={filters}
             />
           )}
         </div>

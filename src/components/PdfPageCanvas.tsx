@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
+import { buildCssFilterString, buildTintStyle, type FilterSettings } from '../services/settingsService';
 import { Loader2 } from 'lucide-react';
 import PageAnnotationCanvas from './PageAnnotationCanvas';
 import type { AnnotationStroke } from '../services/storageService';
@@ -23,6 +24,7 @@ interface PdfPageCanvasProps {
   onRenderSuccess?: () => void;
   onRenderError?: (error: unknown) => void;
   annotationProps?: PageAnnotationProps;
+  filters?: FilterSettings;
 }
 
 export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
@@ -33,10 +35,22 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
   onRenderSuccess,
   onRenderError,
   annotationProps,
+  filters,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rendering, setRendering] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const cssFilterString = React.useMemo(() => buildCssFilterString(filters), [filters]);
+  const tintStyle = React.useMemo(() => buildTintStyle(filters), [filters]);
+
+  const isLightTint = Boolean(
+    filters?.backgroundColor &&
+    filters.backgroundColor.toLowerCase() !== '#ffffff' &&
+    filters.backgroundColor.toLowerCase() !== '#121212' &&
+    filters.backgroundColor.toLowerCase() !== '#1e1e24' &&
+    !filters.invert
+  );
 
   useEffect(() => {
     let activeRender: { cancel: () => void } | null = null;
@@ -70,7 +84,14 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
   }, [pdfDoc, pageNumber, scale, rotate, onRenderSuccess, onRenderError]);
 
   return (
-    <div className="relative inline-flex items-center justify-center bg-transparent shadow-md rounded">
+    <div
+      className="relative inline-flex items-center justify-center shadow-md rounded"
+      style={{
+        backgroundColor: filters?.backgroundColor || '#ffffff',
+        filter: cssFilterString,
+        transition: 'filter 150ms, background-color var(--transition-md)',
+      }}
+    >
       {rendering && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-xs z-10">
           <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
@@ -81,7 +102,23 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
           {error}
         </div>
       )}
-      <canvas ref={canvasRef} className="block" />
+      <canvas
+        ref={canvasRef}
+        className="block rounded"
+        style={{
+          backgroundColor: filters?.backgroundColor || '#ffffff',
+          mixBlendMode: isLightTint ? 'multiply' : undefined,
+        }}
+      />
+      {tintStyle && (
+        <div
+          style={{
+            ...tintStyle,
+            inset: 0,
+            borderRadius: 4,
+          }}
+        />
+      )}
       {annotationProps && (
         <PageAnnotationCanvas
           pageNumber={pageNumber}

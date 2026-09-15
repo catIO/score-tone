@@ -162,3 +162,37 @@ export const settingsService = {
     };
   }
 };
+
+/**
+ * Maps FilterSettings to a standard CSS filter string
+ */
+export function buildCssFilterString(filters?: FilterSettings): string {
+  if (!filters) return 'none';
+  let str = `sepia(${filters.sepia}%) brightness(${filters.brightness}%) contrast(${filters.contrast}%)`;
+  if (filters.invert) {
+    str += ' invert(100%)';
+  }
+  if (filters.highContrast) {
+    str += ' contrast(150%) saturate(80%)';
+  }
+  if (filters.inkDarkness > 0) {
+    str += ' url(#scoretone-ink-darkness)';
+  }
+  return str;
+}
+
+/**
+ * Builds warmth tint overlay style for score paper pages
+ */
+export function buildTintStyle(filters?: FilterSettings): Record<string, string | number> | null {
+  if (!filters || (filters.warmth <= 0 && filters.sepia <= 0)) return null;
+  const opacity = Math.max(filters.warmth, filters.sepia) / 250;
+  return {
+    backgroundColor: '#ff9c3a',
+    opacity,
+    mixBlendMode: 'multiply',
+    pointerEvents: 'none',
+    position: 'absolute',
+    zIndex: 5,
+  };
+}

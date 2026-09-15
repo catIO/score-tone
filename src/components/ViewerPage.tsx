@@ -792,37 +792,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     onSettingsChange(newSettings);
   };
 
-  // Dynamically map CSS filter values
-  const cssFilterString = React.useMemo(() => {
-    let str = `sepia(${filters.sepia}%) brightness(${filters.brightness}%) contrast(${filters.contrast}%)`;
-    if (filters.invert) {
-      str += ' invert(100%)';
-    }
-    if (filters.highContrast) {
-      str += ' contrast(150%) saturate(80%)';
-    }
-    if (filters.inkDarkness > 0) {
-      str += ' url(#scoretone-ink-darkness)';
-    }
-    return str;
-  }, [filters]);
-
-  // Warm tint background overlay configuration
-  const tintStyle = React.useMemo(() => {
-    if (filters.warmth <= 0 && filters.sepia <= 0) return {};
-
-    // Map warmth and sepia to an warm amber multiply overlay color
-    const opacity = Math.max(filters.warmth, filters.sepia) / 250; // max 0.4 opacity
-    return {
-      backgroundColor: '#ff9c3a',
-      opacity: opacity,
-      mixBlendMode: 'multiply' as const,
-      pointerEvents: 'none' as const,
-      position: 'absolute' as const,
-      inset: 0,
-      zIndex: 5
-    };
-  }, [filters.warmth, filters.sepia]);
 
   if (loading && !pdfDoc && !xmlContent) {
     return (
@@ -1013,9 +982,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         style={{
           top: appSettings.autoHideControls ? 0 : 64,
           height: appSettings.autoHideControls ? '100%' : 'calc(100% - 64px)',
-          '--pdf-bg': filters.backgroundColor,
-          '--pdf-mix-blend': 'multiply',
-        } as React.CSSProperties}
+          backgroundColor: '#111',
+        }}
       >
         {/* Discreet bookmark indicator ribbon on bookmarked pages */}
         {isCurrentPageBookmarked && (
@@ -1087,8 +1055,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             <span className="text-[11px] font-bold tracking-wide">{loopDisplayName}</span>
           </button>
         )}
-        <div style={tintStyle} />
-        <div className="w-full h-full" style={{ filter: cssFilterString, transition: 'filter 150ms' }}>
+        <div className="w-full h-full">
           {isMusicXml && xmlContent ? (
             <MusicXmlViewer
               xmlContent={xmlContent}
@@ -1101,6 +1068,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
                 setTotalPages(Math.max(1, pages));
               }}
               annotationProps={annotationProps}
+              filters={filters}
             />
           ) : (
             pdfDoc && (
@@ -1114,6 +1082,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
                 onTotalPages={setTotalPages}
                 zoom={zoom}
                 annotationProps={annotationProps}
+                filters={filters}
               />
             )
           )}
