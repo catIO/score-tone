@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
-import { buildCssFilterString, buildTintStyle, type FilterSettings } from '../services/settingsService';
+import { buildCssFilterString, buildTintStyle, getScorePageBackgroundColor, type FilterSettings } from '../services/settingsService';
 import { Loader2 } from 'lucide-react';
 import PageAnnotationCanvas from './PageAnnotationCanvas';
 import type { AnnotationStroke } from '../services/storageService';
@@ -44,12 +44,11 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
   const cssFilterString = React.useMemo(() => buildCssFilterString(filters), [filters]);
   const tintStyle = React.useMemo(() => buildTintStyle(filters), [filters]);
 
+  const scorePageBg = React.useMemo(() => getScorePageBackgroundColor(filters), [filters]);
+
   const isLightTint = Boolean(
-    filters?.backgroundColor &&
-    filters.backgroundColor.toLowerCase() !== '#ffffff' &&
-    filters.backgroundColor.toLowerCase() !== '#121212' &&
-    filters.backgroundColor.toLowerCase() !== '#1e1e24' &&
-    !filters.invert
+    scorePageBg.toLowerCase() !== '#ffffff' &&
+    !filters?.invert
   );
 
   useEffect(() => {
@@ -87,7 +86,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
     <div
       className="relative inline-flex items-center justify-center shadow-md rounded"
       style={{
-        backgroundColor: filters?.backgroundColor || '#ffffff',
+        backgroundColor: scorePageBg,
         filter: cssFilterString,
         transition: 'filter 150ms, background-color var(--transition-md)',
       }}
@@ -106,7 +105,7 @@ export const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
         ref={canvasRef}
         className="block rounded"
         style={{
-          backgroundColor: filters?.backgroundColor || '#ffffff',
+          backgroundColor: scorePageBg,
           mixBlendMode: isLightTint ? 'multiply' : undefined,
         }}
       />

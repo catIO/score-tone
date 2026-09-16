@@ -42,7 +42,7 @@ const SEPIA_FILTERS: FilterSettings = {
   warmth: 100,
   invert: false,
   highContrast: false,
-  backgroundColor: '#1e1e24',
+  backgroundColor: '#ffffff',
   inkDarkness: 0
 };
 
@@ -74,6 +74,13 @@ export const settingsService = {
         };
       }
       const parsed = JSON.parse(data);
+      // Migrate legacy dark surround background colors (#1e1e24, #121212) to white paper
+      if (
+        parsed.customSliders &&
+        (parsed.customSliders.backgroundColor === '#1e1e24' || parsed.customSliders.backgroundColor === '#121212')
+      ) {
+        parsed.customSliders.backgroundColor = '#ffffff';
+      }
       // Merge with defaults to handle new keys in future releases
       return {
         ...DEFAULT_SETTINGS,
@@ -185,7 +192,7 @@ export function buildCssFilterString(filters?: FilterSettings): string {
  * Builds warmth tint overlay style for score paper pages
  */
 export function buildTintStyle(filters?: FilterSettings): Record<string, string | number> | null {
-  if (!filters || (filters.warmth <= 0 && filters.sepia <= 0)) return null;
+  if (!filters || filters.invert || (filters.warmth <= 0 && filters.sepia <= 0)) return null;
   const opacity = Math.max(filters.warmth, filters.sepia) / 250;
   return {
     backgroundColor: '#ff9c3a',
@@ -195,4 +202,19 @@ export function buildTintStyle(filters?: FilterSettings): Record<string, string 
     position: 'absolute',
     zIndex: 5,
   };
+}
+
+/**
+ * Resolves the effective background color for sheet music paper.
+ * If inverted (Night Mode) or if a dark viewer color (#1e1e24, #121212) is set,
+ * returns '#ffffff' so ink remains legible and invert filters work properly.
+ */
+export function getScorePageBackgroundColor(filters?: FilterSettings): string {
+  if (!filters) return '#ffffff';
+  if (filters.invert) return '#ffffff';
+  const bg = filters.backgroundColor?.toLowerCase();
+  if (!bg || bg === '#1e1e24' || bg === '#121212' || bg === '#ffffff') {
+    return '#ffffff';
+  }
+  return filters.backgroundColor;
 }

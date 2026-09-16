@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, memo } from 'react';
 import { normalizeMusicXmlForOsmd } from '../services/musicXmlService';
 import { audioPlaybackService, type PlaybackState } from '../services/audioPlaybackService';
-import { buildCssFilterString, buildTintStyle, type FilterSettings } from '../services/settingsService';
+import { buildCssFilterString, buildTintStyle, getScorePageBackgroundColor, type FilterSettings } from '../services/settingsService';
 import { Loader2, AlertCircle } from 'lucide-react';
 import PageAnnotationCanvas from './PageAnnotationCanvas';
 import type { PageAnnotationProps } from './PdfPageCanvas';
@@ -218,7 +218,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       const osmd = new OSMD(containerRef.current, {
         autoResize: false,
         backend: 'svg',
-        backgroundColor: filters?.backgroundColor || '#ffffff',
+        backgroundColor: getScorePageBackgroundColor(filters),
         drawTitle: true,
         drawComposer: true,
         drawMeasureNumbers: true,
@@ -244,7 +244,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
       const svgs = containerRef.current.querySelectorAll('svg');
       svgs.forEach((svg: SVGElement, idx: number) => {
-        svg.style.backgroundColor = filters?.backgroundColor || '#ffffff';
+        svg.style.backgroundColor = getScorePageBackgroundColor(filters);
         svg.setAttribute('data-page', String(idx + 1));
       });
 
@@ -291,7 +291,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         }
         const svgs = containerRef.current?.querySelectorAll('svg');
         svgs?.forEach((svg: SVGElement) => {
-          svg.style.backgroundColor = filters?.backgroundColor || '#ffffff';
+          svg.style.backgroundColor = getScorePageBackgroundColor(filters);
         });
         if (onRenderCompleteRef.current && osmdRef.current.GraphicSheet?.MusicPages) {
           onRenderCompleteRef.current({ totalPages: osmdRef.current.GraphicSheet.MusicPages.length });
@@ -301,15 +301,15 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         console.warn('Error adjusting zoom on OSMD:', err);
       }
     }
-  }, [zoom, loading, updatePageBounds, filters?.backgroundColor]);
+  }, [zoom, loading, updatePageBounds, filters?.backgroundColor, filters?.invert]);
 
   // Keep SVG background color in sync when page background setting changes
   useEffect(() => {
     const svgs = containerRef.current?.querySelectorAll('svg');
     svgs?.forEach((svg: SVGElement) => {
-      svg.style.backgroundColor = filters?.backgroundColor || '#ffffff';
+      svg.style.backgroundColor = getScorePageBackgroundColor(filters);
     });
-  }, [filters?.backgroundColor]);
+  }, [filters?.backgroundColor, filters?.invert]);
 
   // Keep page overlay bounds updated on wrapper resize
   useEffect(() => {
@@ -948,7 +948,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
             boxSizing: 'border-box',
             filter: cssFilterString,
             transition: 'filter 150ms',
-            '--score-page-bg': filters?.backgroundColor || '#ffffff',
+            '--score-page-bg': getScorePageBackgroundColor(filters),
           } as React.CSSProperties}
         >
           {/* OSMD DOM host - strictly contains zero React children */}
@@ -976,15 +976,6 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
               }}
             />
           ))}
-          {tintStyle && pageBounds.length === 0 && (
-            <div
-              style={{
-                ...tintStyle,
-                inset: 0,
-                borderRadius: 4,
-              }}
-            />
-          )}
 
           {/* Annotation Overlays over each SVG page - rendered as siblings outside OSMD container */}
           {annotationProps && pageBounds.map((b) => (
