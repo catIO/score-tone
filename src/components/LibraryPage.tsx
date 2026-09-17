@@ -662,8 +662,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               <button
                 onClick={() => handleViewModeChange('grid')}
                 className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${viewMode === 'grid'
-                    ? 'shadow-sm font-bold'
-                    : 'opacity-70 hover:opacity-100'
+                  ? 'shadow-sm font-bold'
+                  : 'opacity-70 hover:opacity-100'
                   }`}
                 style={{
                   background: viewMode === 'grid' ? 'var(--md-surface-1)' : 'transparent',
@@ -677,8 +677,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               <button
                 onClick={() => handleViewModeChange('list')}
                 className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${viewMode === 'list'
-                    ? 'shadow-sm font-bold'
-                    : 'opacity-70 hover:opacity-100'
+                  ? 'shadow-sm font-bold'
+                  : 'opacity-70 hover:opacity-100'
                   }`}
                 style={{
                   background: viewMode === 'list' ? 'var(--md-surface-1)' : 'transparent',

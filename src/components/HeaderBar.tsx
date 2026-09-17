@@ -230,40 +230,40 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           {/* Add Score button (prominent filled action) */}
           <div ref={sourcesRef} className="relative hidden sm:inline-flex rounded-full shadow-sm" style={{ background: 'var(--md-primary)', color: 'var(--md-on-primary)' }}>
-          <button
-            type="button"
-            onClick={event => { setSourcesOpen(false); setMenuOpen(false); event.currentTarget.focus(); setShowAddScore(true); }}
-            className="md-btn-filled hidden sm:inline-flex min-h-[44px] items-center gap-1.5 text-xs py-2 px-3.5 rounded-l-full active:scale-95"
-            style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
-            title="Choose where to import a score from"
-            aria-haspopup="dialog"
-          >
-            <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Add Score</span>
-          </button>
-          <button
-            ref={sourcesButtonRef}
-            type="button"
-            aria-label="Quick add score sources"
-            aria-expanded={sourcesOpen}
-            aria-controls={sourcesOpen ? sourcesId : undefined}
-            title="Quick import from device or Google Drive"
-            onClick={() => { setMenuOpen(false); setSourcesOpen(open => !open); }}
-            onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setSourcesOpen(true); } }}
-            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-r-full border-l border-current/20 hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-primary)]"
-          >
-            <ChevronDown className={`w-4 h-4 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-          </button>
-          {sourcesOpen && (
-            <ul id={sourcesId} aria-label="Score sources" className="absolute right-0 top-full z-50 mt-2 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border py-1 shadow-xl" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)', borderColor: 'var(--md-outline-variant)' }}>
-              <li><button type="button" onClick={() => chooseSource(onAddScore)} className={menuButtonClass}>
-                <HardDrive className="w-4 h-4 text-[var(--md-primary)]" aria-hidden="true" />From this device
-              </button></li>
-              <li title={cloudHint}><button type="button" disabled={cloudDisabled} aria-describedby={`${sourcesId}-cloud-help`} onClick={() => { if (onOpenDrive) chooseSource(onOpenDrive); }} className={`${menuButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}>
-                <Cloud className="w-4 h-4 text-[var(--md-primary)]" aria-hidden="true" />From Google Drive
-              </button><span id={`${sourcesId}-cloud-help`} className="sr-only">{cloudHint}</span></li>
-            </ul>
-          )}
+            <button
+              type="button"
+              onClick={event => { setSourcesOpen(false); setMenuOpen(false); event.currentTarget.focus(); setShowAddScore(true); }}
+              className="md-btn-filled hidden sm:inline-flex min-h-[44px] items-center gap-1.5 text-xs py-2 px-3.5 rounded-l-full active:scale-95"
+              style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+              title="Choose where to import a score from"
+              aria-haspopup="dialog"
+            >
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Add Score</span>
+            </button>
+            <button
+              ref={sourcesButtonRef}
+              type="button"
+              aria-label="Quick add score sources"
+              aria-expanded={sourcesOpen}
+              aria-controls={sourcesOpen ? sourcesId : undefined}
+              title="Quick import from device or Google Drive"
+              onClick={() => { setMenuOpen(false); setSourcesOpen(open => !open); }}
+              onKeyDown={event => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); setSourcesOpen(true); } }}
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-r-full border-l border-current/20 hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-primary)]"
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform ${sourcesOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            {sourcesOpen && (
+              <ul id={sourcesId} aria-label="Score sources" className="absolute right-0 top-full z-50 mt-2 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border py-1 shadow-xl" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)', borderColor: 'var(--md-outline-variant)' }}>
+                <li><button type="button" onClick={() => chooseSource(onAddScore)} className={menuButtonClass}>
+                  <HardDrive className="w-4 h-4 text-[var(--md-primary)]" aria-hidden="true" />From this device
+                </button></li>
+                <li title={cloudHint}><button type="button" disabled={cloudDisabled} aria-describedby={`${sourcesId}-cloud-help`} onClick={() => { if (onOpenDrive) chooseSource(onOpenDrive); }} className={`${menuButtonClass} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                  <Cloud className="w-4 h-4 text-[var(--md-primary)]" aria-hidden="true" />From Google Drive
+                </button><span id={`${sourcesId}-cloud-help`} className="sr-only">{cloudHint}</span></li>
+              </ul>
+            )}
           </div>
 
           {/* Quick Theme Toggle Button */}
