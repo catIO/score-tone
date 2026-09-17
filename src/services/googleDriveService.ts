@@ -573,6 +573,7 @@ export const googleDriveService = {
         .setOAuthToken(token)
         .setDeveloperKey(API_KEY)
         .setAppId(APP_ID)
+        .setOrigin(window.location.protocol + '//' + window.location.host)
         .setTitle('Select a PDF or MusicXML score')
         .setCallback((data: any) => {
           if (data.action === window.google.picker.Action.PICKED) {

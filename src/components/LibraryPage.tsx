@@ -8,6 +8,7 @@ import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '.
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import HeaderBar from './HeaderBar';
+import { DriveFileBrowser } from './DriveFileBrowser';
 
 interface LibraryPageProps {
   onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number, queryParams?: Record<string, string>) => void;
@@ -33,6 +34,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   );
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showDriveBrowser, setShowDriveBrowser] = useState(false);
   // Share dropdown state: tracks which card's menu is open and which item was just copied
   const [openShareId, setOpenShareId] = useState<string | null>(null);
   const [copiedState, setCopiedState] = useState<{ id: string; type: 'score' | 'page' } | null>(null);
@@ -218,10 +220,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     try {
       const token = await googleDriveService.getAccessToken();
       setDriveToken(token);
-      const picked = await googleDriveService.openPicker(token);
-      if (picked) {
-        await handleDriveFileSelected(picked);
-      }
+      setShowDriveBrowser(true);
     } catch (err: any) {
       setErrorMsg(err.message || 'Google sign-in failed.');
     } finally {
@@ -230,6 +229,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   };
 
   const handleDriveFileSelected = async (metadata: GoogleDriveFileMetadata) => {
+    setShowDriveBrowser(false);
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -1511,6 +1511,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
             </div>
           </div>
         </div>
+      )}
+      {showDriveBrowser && driveToken && (
+        <DriveFileBrowser
+          token={driveToken}
+          onSelect={handleDriveFileSelected}
+          onClose={() => setShowDriveBrowser(false)}
+        />
       )}
     </div>
   );
