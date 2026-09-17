@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, AlertTriangle, ArrowLeft, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ScoreFile, Bookmark } from '../services/storageService';
-import { storageService, isMusicXmlFile } from '../services/storageService';
+import { isMusicXmlFile } from '../services/storageService';
+import { useLibraryStorage } from '../hooks/useLibraryStorage';
 import type { AppSettings, FilterSettings } from '../services/settingsService';
 import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
 import { readMusicXmlText } from '../services/musicXmlService';
@@ -41,6 +42,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   onPagePermalink,
   onFileMetadataUpdated,
 }) => {
+  const storageService = useLibraryStorage();
   const isMusicXml = isMusicXmlFile(file);
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
   const [xmlContent, setXmlContent] = useState<string | null>(null);
@@ -83,12 +85,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const currentLoopBookmark = isLoopActive && activeLoopRange
     ? (file.bookmarks || []).find(
-        bm =>
-          bm.type === 'loop' &&
-          bm.loopRange &&
-          Math.abs(bm.loopRange.startBeat - activeLoopRange.startBeat) < 0.05 &&
-          Math.abs(bm.loopRange.endBeat - activeLoopRange.endBeat) < 0.05
-      )
+      bm =>
+        bm.type === 'loop' &&
+        bm.loopRange &&
+        Math.abs(bm.loopRange.startBeat - activeLoopRange.startBeat) < 0.05 &&
+        Math.abs(bm.loopRange.endBeat - activeLoopRange.endBeat) < 0.05
+    )
     : undefined;
 
   const isCurrentLoopBookmarked = Boolean(currentLoopBookmark);
@@ -96,8 +98,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const loopDisplayName = currentLoopBookmark
     ? currentLoopBookmark.name
     : activeLoopRange?.startMeasure && activeLoopRange?.endMeasure
-    ? `m. ${activeLoopRange.startMeasure}–${activeLoopRange.endMeasure}`
-    : 'Loop';
+      ? `m. ${activeLoopRange.startMeasure}–${activeLoopRange.endMeasure}`
+      : 'Loop';
 
   // Annotation state and storage
   const annotationState = useAnnotationState(file.id);
@@ -191,7 +193,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     if (file.zoom === zoom) return;
     const timer = window.setTimeout(() => {
       file.zoom = zoom;
-      storageService.saveFileMetadata({ ...file, zoom }).catch(() => {});
+      storageService.saveFileMetadata({ ...file, zoom }).catch(() => { });
     }, 600);
     return () => window.clearTimeout(timer);
   }, [zoom, file]);
@@ -252,7 +254,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           if (file.source === 'google-drive') {
             rawData = await googleDriveService.downloadFile(file.id);
             if (rawData && file.offline) {
-              await storageService.cacheFileOffline(file, rawData).catch(() => {});
+              await storageService.cacheFileOffline(file, rawData).catch(() => { });
             }
           } else if (file.source === 'local') {
             throw new Error('Local temporary file has expired. Please reload it from the library.');
@@ -441,7 +443,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const handleBpmChange = useCallback((newBpm: number) => {
     audioPlaybackService.setTempo(newBpm);
-    storageService.saveFileMetadata({ ...file, tempo: newBpm }).catch(() => {});
+    storageService.saveFileMetadata({ ...file, tempo: newBpm }).catch(() => { });
   }, [file]);
 
   const handleVolumeChange = useCallback((newVol: number) => {
@@ -739,8 +741,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
     const isLoopMatching =
       Boolean(playbackState.loopRange &&
-      Math.abs(playbackState.loopRange.startBeat - bm.loopRange.startBeat) < 0.05 &&
-      Math.abs(playbackState.loopRange.endBeat - bm.loopRange.endBeat) < 0.05);
+        Math.abs(playbackState.loopRange.startBeat - bm.loopRange.startBeat) < 0.05 &&
+        Math.abs(playbackState.loopRange.endBeat - bm.loopRange.endBeat) < 0.05);
 
     // If play button clicked on currently playing loop, toggle pause
     if (autoPlay && isLoopMatching && playbackState.isPlaying) {
@@ -1021,9 +1023,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               setIsDisplayOpen(false);
               setIsSettingsOpen(false);
             }}
-            className={`absolute top-2.5 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95 ${
-              playbackState.loopPauseActive ? 'animate-pulse' : ''
-            }`}
+            className={`absolute top-2.5 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95 ${playbackState.loopPauseActive ? 'animate-pulse' : ''
+              }`}
             style={{
               right: isCurrentPageBookmarked ? 100 : 16,
               background: playbackState.loopPauseActive
@@ -1041,8 +1042,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               playbackState.loopPauseActive
                 ? `Next loop in ${playbackState.loopPauseRemaining ?? 0}s — click to view bookmarks`
                 : playbackState.loopPauseSeconds
-                ? `Loop "${loopDisplayName}" is active (${playbackState.loopPauseSeconds}s pause between loops) — click to view bookmarks`
-                : `Loop "${loopDisplayName}" is active — click to view bookmarks`
+                  ? `Loop "${loopDisplayName}" is active (${playbackState.loopPauseSeconds}s pause between loops) — click to view bookmarks`
+                  : `Loop "${loopDisplayName}" is active — click to view bookmarks`
             }
           >
             {playbackState.loopPauseActive ? (
@@ -1190,13 +1191,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               handlePageChange(Math.max(1, currentPage - step));
             }}
             disabled={currentPage <= 1}
-            className={`absolute left-0 top-1/2 -translate-y-1/2 h-20 rounded-r-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-r border-white/10 ${
-              currentPage <= 1
+            className={`absolute left-0 top-1/2 -translate-y-1/2 h-20 rounded-r-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-r border-white/10 ${currentPage <= 1
                 ? 'opacity-0 pointer-events-none'
                 : hoverSide === 'left'
                   ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
                   : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
-            }`}
+              }`}
             title="Previous Page (←)"
             aria-label="Previous Page"
           >
@@ -1210,13 +1210,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               handlePageChange(Math.min(totalPages, currentPage + step));
             }}
             disabled={currentPage >= totalPages}
-            className={`absolute right-0 top-1/2 -translate-y-1/2 h-20 rounded-l-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-l border-white/10 ${
-              currentPage >= totalPages
+            className={`absolute right-0 top-1/2 -translate-y-1/2 h-20 rounded-l-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-l border-white/10 ${currentPage >= totalPages
                 ? 'opacity-0 pointer-events-none'
                 : hoverSide === 'right'
                   ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
                   : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
-            }`}
+              }`}
             title="Next Page (→)"
             aria-label="Next Page"
           >

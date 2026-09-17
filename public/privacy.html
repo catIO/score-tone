@@ -1,168 +1,267 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Privacy Policy - Score Tone</title>
-    <meta name="description" content="Privacy Policy for Score Tone." />
-    <!-- Tailwind CSS CDN -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              gray: {
-                950: '#030712',
-              }
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy - Score Tone</title>
+  <meta name="description" content="Privacy Policy for Score Tone." />
+  <!-- Tailwind CSS CDN -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            gray: {
+              950: '#030712',
             }
           }
         }
       }
-    </script>
-    <style>
-      body {
-        background-color: #141210;
+    }
+  </script>
+  <style>
+    body {
+      background-color: #141210;
       font-family: 'Inter', system-ui, sans-serif;
-      }
-    </style>
-  </head>
-  <body class="min-h-screen text-[#E8E1D9] flex flex-col justify-between">
-    <div class="bg-[#141210] flex-grow py-20 px-6">
-      <div class="max-w-4xl mx-auto">
-        <!-- Header -->
-        <div class="text-center mb-16">
-          <svg class="h-16 w-16 text-[#FFB74D] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-[#E8E1D9] flex flex-col justify-between">
+  <div class="bg-[#141210] flex-grow py-20 px-6">
+    <div class="max-w-4xl mx-auto">
+      <!-- Header -->
+      <div class="text-center mb-16">
+        <svg class="h-16 w-16 text-[#FFB74D] mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+          stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+        <h1 class="text-4xl md:text-5xl font-bold text-[#E8E1D9] mb-4">
+          Privacy Policy
+        </h1>
+        <p class="text-[#9E9385] text-lg">
+          Effective Date: September 17, 2026
+        </p>
+      </div>
+
+      <!-- Intro -->
+      <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
+        <p class="text-[#CEC5B8] text-lg leading-relaxed">
+          This Privacy Policy explains how Score Tone handles Google account information, imported scores, and data
+          saved in your browser. Google Drive is optional; you can import local scores without signing in. Account
+          libraries organize local data but are not an authentication lock or app-level encrypted storage.
+        </p>
+      </div>
+
+      <!-- Google Services Section -->
+      <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
+        <div class="flex items-center mb-6">
+          <svg class="h-6 w-6 text-[#FFB74D] mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          <h1 class="text-4xl md:text-5xl font-bold text-[#E8E1D9] mb-4">
-            Privacy Policy
-          </h1>
-          <p class="text-[#9E9385] text-lg">
-            Effective Date: July 14, 2026
-          </p>
+          <h2 class="text-2xl font-bold text-[#E8E1D9]">Google API Services & User Data</h2>
         </div>
+        <p class="text-[#CEC5B8] mb-6 leading-relaxed">
+          Score Tone integrates with Google API Services to open PDF, MusicXML, and compressed MusicXML (MXL) scores.
+          The deployment uses one shared OAuth project; each user consents with their own Google account. Score Tone's
+          use of information received from Google APIs is subject to the <a
+            href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank"
+            rel="noopener noreferrer" class="text-[#FFB74D] hover:underline">Google API Services User Data Policy</a>,
+          including the Limited Use requirements.
+        </p>
+        <div class="space-y-6">
+          <!-- ScoreTone (Google Drive) -->
+          <div class="border-l-4 border-[#FFB74D]/40 pl-4 py-1">
+            <h3 class="text-xl font-semibold text-[#E8E1D9] mb-2">Score Tone (Google Drive & Picker Integration)</h3>
 
-        <!-- Intro -->
-        <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
-          <p class="text-[#CEC5B8] text-lg leading-relaxed">
-            This Privacy Policy explains how Score Tone handles your data. We are committed to protecting your privacy and ensuring a secure experience.
-          </p>
-        </div>
-
-        <!-- Google Services Section -->
-        <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
-          <div class="flex items-center mb-6">
-            <svg class="h-6 w-6 text-[#FFB74D] mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
-            <h2 class="text-2xl font-bold text-[#E8E1D9]">Google API Services & User Data</h2>
-          </div>
-          <p class="text-[#CEC5B8] mb-6 leading-relaxed">
-            Score Tone integrates with Google API Services to allow users to open PDF files from their Google Drive. We strictly adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer" class="text-[#FFB74D] hover:underline">Google API Services User Data Policy</a>, including the Limited Use requirements.
-          </p>
-          <div class="space-y-6">
-            <!-- ScoreTone (Google Drive) -->
-            <div class="border-l-4 border-[#FFB74D]/40 pl-4 py-1">
-              <h3 class="text-xl font-semibold text-[#E8E1D9] mb-2">Score Tone (Google Drive & Picker Integration)</h3>
-              
-              <div class="space-y-4 text-[#CEC5B8]">
-                <p>
-                  <strong>Data Access & Collection:</strong> Score Tone requests OAuth permission to access sheet music files stored in your Google Drive using the <code class="text-[#FFB74D]">https://www.googleapis.com/auth/drive.file</code> and <code class="text-[#FFB74D]">https://www.googleapis.com/auth/userinfo.email</code> scopes. The Drive scope is used to display the Google Picker, allowing you to browse and select which scores to open. The email scope is used to retrieve your email address, which is saved locally as a login hint to streamline future silent authentication requests. We only access the specific metadata and content of files you select.
-                </p>
-                <p>
-                  <strong>Data Usage:</strong> We use your Google user data solely to download and render the PDF music scores in your local browser session as requested. We do not use this data for advertising, marketing, profiling, or any other business purpose.
-                </p>
-                <p>
-                  <strong>Data Sharing & Transfers:</strong> We do not share, transfer, or disclose any Google user data or file content with third parties. All access and processing are handled entirely client-side in your browser.
-                </p>
-                <p>
-                  <strong>Data Retention & Deletion:</strong> We do not store or retain your Google Drive files or metadata on any external servers. If you choose to cache a file for offline access, the PDF file content and its metadata are stored securely on your local device within the browser's IndexedDB storage. You can delete these cached files and their records at any time by clicking the trash icon in your library.
-                </p>
-                <p>
-                  <strong>Login Hint & Email Storage:</strong> To streamline future authentication requests and support silent token refreshes, Score Tone retrieves your Google account email address via Google's user information endpoint and saves it locally on your device. This email is stored solely in your browser's local storage (<code class="text-[#FFB74D]">localStorage</code>) as a login hint, is never sent to Score Tone's servers, and is not shared with any third parties.
-                </p>
-                <p>
-                  <strong>Session Security & OAuth Tokens:</strong> To maintain your connection across page refreshes, your temporary Google access token is stored in your browser's temporary session storage (<code class="text-[#FFB74D]">sessionStorage</code>). This token is automatically deleted when you close the browser tab or when you click the "Disconnect" button.
-                </p>
-                <p>
-                  <strong>Security & Protection:</strong> Security procedures are in place to protect the confidentiality of your data. All communication between the application, your browser, and Google APIs is fully encrypted in transit using industry-standard Secure Socket Layer (SSL/HTTPS) encryption.
-                </p>
-              </div>
+            <div class="space-y-4 text-[#CEC5B8]">
+              <p>
+                <strong>Drive Access:</strong> Score Tone requests <code
+                  class="text-[#FFB74D]">https://www.googleapis.com/auth/drive.file</code> for files authorized for this
+                app, normally through your selection in Google Picker. The native "Previously authorized scores" list is
+                limited by this scope; it is not a list of your entire Drive. Google describes this scope as permitting
+                modification of authorized files, but Score Tone currently uses it to read metadata and download scores,
+                not upload edits, delete Drive originals, or change sharing permissions. Metadata may include file ID,
+                name, size, modification time, and thumbnail URL.
+              </p>
+              <p>
+                <strong>Account Information:</strong> Score Tone also requests <code
+                  class="text-[#FFB74D]">openid</code>, <code
+                  class="text-[#FFB74D]">https://www.googleapis.com/auth/userinfo.email</code>, and <code
+                  class="text-[#FFB74D]">https://www.googleapis.com/auth/userinfo.profile</code>. During explicit
+                sign-in, it verifies the returned account by calling Google's userinfo endpoint with the access token.
+                The returned stable account identifier (<code class="text-[#FFB74D]">sub</code>) selects the account's
+                local library; available name, given name, email, and profile picture URL support account display. A
+                typed email or saved login hint is not proof of account identity.
+              </p>
+              <p>
+                <strong>Links and Public Files:</strong> Pasting or sharing a score link does not grant access. Private
+                files may require both access from the owner and selection through Google Picker. Downloads may also try
+                public Google endpoints, so some publicly accessible files can open without Picker authorization or a
+                token. Public downloads remain subject to Google's restrictions and browser/network behavior. Links
+                share file references and may include names, page positions, or loop details; they do not upload local
+                file content or transfer permission.
+              </p>
+              <p>
+                <strong>Data Usage and Transfers:</strong> Score Tone uses Google user data to identify the selected
+                account, display account information, list authorized scores, and download, display, play supported
+                scores, and retain local copies as requested. It does not use this data for advertising, marketing, or
+                behavioral profiling, or sell it. These operations run in your browser and communicate directly with
+                Google for authentication, userinfo, Picker, file requests, and Google-hosted profile/thumbnail images.
+                There is no Score Tone backend receiving score content or maintaining a cloud library, managed sharing
+                service, or cross-device synchronization.
+              </p>
+              <p>
+                <strong>Offline Data Retention:</strong> Local imports and scores imported through the Drive library
+                dialog save metadata and file blobs in the currently selected library's IndexedDB database. Account
+                libraries are separate databases keyed by Google account identifier and include files, bookmarks,
+                offline blobs, annotations, and custom presets. A newly opened shared link may remain an in-memory
+                preview until saved. The original <code class="text-[#FFB74D]">ScoreToneDatabase</code> remains the
+                "Device library," including older saved scores; connecting an account does not automatically reassign or
+                migrate it. Local imports while an account library is selected save there, not automatically in Device
+                library, and are not uploaded to Google Drive.
+              </p>
+              <p>
+                <strong>Saved Profile and Login Hint:</strong> The selected account's identifier and available display
+                profile are saved in your browser's <code class="text-[#FFB74D]">localStorage</code>, along with a login
+                hint for a later explicit reconnect. This remembers the selected offline library after reload, even when
+                offline or without a live Google session. The hint may be sent to Google when you explicitly reconnect.
+                Restoring this profile is not fresh identity verification. Choosing another Google account requires an
+                explicit online flow and verification through Google's userinfo endpoint.
+              </p>
+              <p>
+                <strong>OAuth Tokens:</strong> Access tokens and expiry timestamps are held only in JavaScript memory,
+                not in <code class="text-[#FFB74D]">localStorage</code>, <code
+                  class="text-[#FFB74D]">sessionStorage</code>, or IndexedDB. Reloading the page loses the token. Legacy
+                localStorage token and expiry keys are removed at startup and disconnect. Score Tone stores no refresh
+                token and performs no silent or background authentication. Reconnect explicitly when online access is
+                needed; saved offline copies do not require a live token. Preloading Google's sign-in script is not an
+                authentication request.
+              </p>
+              <p>
+                <strong>Local Privacy Limits:</strong> Requests to Google APIs use HTTPS, but Score Tone does not
+                provide app-level encryption or an authentication lock for browser-stored scores. Someone using the same
+                OS user or browser profile can access or alter browser storage, including retained account libraries.
+                Separate OS/browser profiles are appropriate for shared devices. Offline storage can be lost through
+                browser eviction, private browsing, or clearing site data; keep original scores elsewhere.
+              </p>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- General Data Collection -->
-        <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
-          <div class="flex items-center mb-6">
-            <svg class="h-6 w-6 text-[#FFB74D] mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+      <!-- General Data Collection -->
+      <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
+        <div class="flex items-center mb-6">
+          <svg class="h-6 w-6 text-[#FFB74D] mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <h2 class="text-2xl font-bold text-[#E8E1D9]">General Data Handling</h2>
+        </div>
+        <ul class="space-y-4 text-[#CEC5B8]">
+          <li class="flex items-start">
+            <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <h2 class="text-2xl font-bold text-[#E8E1D9]">General Data Handling</h2>
-          </div>
-          <ul class="space-y-4 text-[#CEC5B8]">
-            <li class="flex items-start">
-              <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span><strong>No Account Required (Qualified):</strong> You do not need to create an account with us to use our tools. Local PDF files and settings require no registration. Connecting a Google account is optional and is only used to download and display PDF scores from your Google Drive.</span>
-            </li>
-            <li class="flex items-start">
-              <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span><strong>Local Storage & IndexedDB:</strong> Any application configurations, preferences, or score metadata are stored locally in your browser (via LocalStorage or IndexedDB) and remain entirely on your device.</span>
-            </li>
-            <li class="flex items-start">
-              <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span><strong>No Analytics/Tracking:</strong> We do not track your usage habits or sell data to advertising networks.</span>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Revocation & Third Party ToS -->
-        <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
-          <div class="flex items-center mb-6">
-            <svg class="h-6 w-6 text-[#FFB74D] mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <span><strong>No Score Tone Account Required:</strong> Local PDF, MusicXML, and MXL import requires no
+              registration. Connecting Google is optional and enables selected-file import and an account-specific local
+              library. If Google services are unavailable, use device-file import; disabling Brave Shields is not
+              required to use Score Tone.</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <h2 class="text-2xl font-bold text-[#E8E1D9]">Third-Party Terms & Revocation</h2>
-          </div>
-          <p class="text-[#CEC5B8] mb-4 leading-relaxed">
-            By using Score Tone, you also agree to be bound by Google's main Privacy Policy.
-          </p>
-          <p class="text-[#CEC5B8] leading-relaxed">
-            You can revoke access to your Google account at any time. To manage your app permissions, visit the <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer" class="text-[#FFB74D] hover:underline">Google Security Settings Page</a>.
-          </p>
-        </div>
+            <span><strong>Browser Storage:</strong> Libraries are stored in IndexedDB; the selected profile, login hint,
+              and general preferences use localStorage. General display settings, theme, and library view preference
+              remain device-wide, unlike account-scoped saved custom presets. The service worker caches app assets for
+              offline use. Browser storage is not a cloud backup.</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24"
+              stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span><strong>No Analytics/Tracking:</strong> We do not track your usage habits or sell data to advertising
+              networks.</span>
+          </li>
+        </ul>
+      </div>
 
-        <!-- Contact -->
-        <div class="bg-[#1D1B18] rounded-2xl p-8 border border-[#4E4540] text-center">
-          <h2 class="text-2xl font-bold text-[#E8E1D9] mb-4">Questions & Contact</h2>
-          <p class="text-[#CEC5B8] mb-4">
-            If you have any questions or concerns about this Privacy Policy, please contact us.
-          </p>
-          <a 
-            href="https://www.microsaurus.com/" 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            class="inline-block bg-[#FFB74D] hover:bg-[#FFA726] text-[#3E2000] font-semibold px-6 py-3 rounded-lg transition-colors duration-200"
-          >
-            Contact Us via Microsaurus
-          </a>
+      <!-- Revocation & Third Party ToS -->
+      <div class="bg-[#1D1B18] rounded-2xl p-8 mb-8 border border-[#4E4540]">
+        <div class="flex items-center mb-6">
+          <svg class="h-6 w-6 text-[#FFB74D] mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <h2 class="text-2xl font-bold text-[#E8E1D9]">Third-Party Terms & Revocation</h2>
         </div>
+        <p class="text-[#CEC5B8] mb-4 leading-relaxed">
+          Google services are subject to <a href="https://policies.google.com/privacy" target="_blank"
+            rel="noopener noreferrer" class="text-[#FFB74D] hover:underline">Google's Privacy Policy</a>. The app also
+          loads resources from external providers; this privacy page uses Google Fonts and the Tailwind CSS CDN.
+          Requests to these services and the hosting provider can expose standard connection information such as your IP
+          address and browser information under those providers' policies.
+        </p>
+        <p class="text-[#CEC5B8] mb-4 leading-relaxed">
+          <strong>Disconnect:</strong> "Disconnect · use device library" clears the in-memory token and saved
+          profile/login hint, hides that account's library, and returns to Device library. It does not delete account
+          copies, bookmarks, annotations, or custom presets, and it does not revoke Google's permission grant.
+          Reconnecting the same verified account shows its retained library again.
+        </p>
+        <p class="text-[#CEC5B8] mb-4 leading-relaxed">
+          <strong>Revoke:</strong> To revoke Google's grant, remove Score Tone from <a
+            href="https://myaccount.google.com/permissions" target="_blank" rel="noopener noreferrer"
+            class="text-[#FFB74D] hover:underline">Google account permissions</a>. Revocation does not erase existing
+          offline copies or local profile data; disconnect and delete local data separately as needed.
+        </p>
+        <p class="text-[#CEC5B8] mb-4 leading-relaxed">
+          <strong>Delete Local Scores:</strong> Use the trash action in the selected library to delete a score's
+          metadata, bookmarks, blob, and annotations from that library. Other account libraries and Google Drive
+          originals are unaffected. Removing only an offline copy retains metadata; remove saved custom presets
+          separately. To delete a hidden account's scores through the app, reconnect that account first.
+        </p>
+        <p class="text-[#CEC5B8] leading-relaxed">
+          <strong>Delete All Local App Data:</strong> Close other Score Tone tabs and clear this site's browser data,
+          including IndexedDB, localStorage, and caches, to remove all Device and account libraries, saved profiles,
+          preferences, and offline app assets in that browser profile. Clearing site data does not delete Drive
+          originals or revoke Google's grant. Account copies otherwise remain until you remove them or the browser
+          clears them; disconnect is not secure erasure.
+        </p>
+      </div>
+
+      <!-- Contact -->
+      <div class="bg-[#1D1B18] rounded-2xl p-8 border border-[#4E4540] text-center">
+        <h2 class="text-2xl font-bold text-[#E8E1D9] mb-4">Questions & Contact</h2>
+        <p class="text-[#CEC5B8] mb-4">
+          If you have any questions or concerns about this Privacy Policy, please contact us.
+        </p>
+        <a href="https://www.microsaurus.com/" target="_blank" rel="noopener noreferrer"
+          class="inline-block bg-[#FFB74D] hover:bg-[#FFA726] text-[#3E2000] font-semibold px-6 py-3 rounded-lg transition-colors duration-200">
+          Contact Us via Microsaurus
+        </a>
       </div>
     </div>
-    
-    <footer class="bg-[#0D0B09] border-t border-[#4E4540] py-6 px-6 text-center text-sm text-[#9E9385]">
-      &copy; 2026 Score Tone. All rights reserved.
-    </footer>
-  </body>
+  </div>
+
+  <footer class="bg-[#0D0B09] border-t border-[#4E4540] py-6 px-6 text-center text-sm text-[#9E9385]">
+    &copy; 2026 Score Tone. All rights reserved.
+  </footer>
+</body>
+
 </html>

@@ -82,14 +82,16 @@ export interface PageAnnotationRecord {
   syncStatus?: 'synced' | 'pending' | 'local_only';
 }
 
-class ScoreToneDatabase extends Dexie {
+export class ScoreToneDatabase extends Dexie {
   files!: Table<ScoreFile, string>;
   fileData!: Table<ScoreFileData, string>;
   customPresets!: Table<CustomPreset, string>;
   annotations!: Table<PageAnnotationRecord, [string, number]>;
 
-  constructor() {
-    super('ScoreToneDatabase');
+  constructor(accountId: string | null = null) {
+    // Preserve the original database as the device/legacy library. Never claim
+    // its contents for whichever Google account happens to connect first.
+    super(accountId === null ? 'ScoreToneDatabase' : `ScoreToneDatabase:google:${encodeURIComponent(accountId)}`);
     this.version(1).stores({
       files: 'id, name, source, lastOpened, offline',
       fileData: 'fileId',
@@ -104,84 +106,89 @@ class ScoreToneDatabase extends Dexie {
   }
 }
 
-export const db = new ScoreToneDatabase();
+export function createStorageService(accountId: string | null = null) {
+  const db = new ScoreToneDatabase(accountId);
+  return {
+    db,
+    accountId,
+    // Get all metadata files sorted by last opened
+    async getFiles(): Promise<ScoreFile[]> {
+      return db.files.orderBy('lastOpened').reverse().toArray();
+    },
 
-export const storageService = {
-  // Get all metadata files sorted by last opened
-  async getFiles(): Promise<ScoreFile[]> {
-    return db.files.orderBy('lastOpened').reverse().toArray();
-  },
-
-  // Save metadata (merges with existing record to prevent overwriting bookmarks or other metadata)
-  async saveFileMetadata(file: ScoreFile): Promise<void> {
-    const existing = await db.files.get(file.id);
-    if (!existing && !file.offline) {
-      // Don't auto-create a library record for previewing unsaved shared scores
-      return;
-    }
-    const merged: ScoreFile = {
-      ...existing,
-      ...file,
-      bookmarks: file.bookmarks !== undefined ? file.bookmarks : existing?.bookmarks,
-      lastPage: file.lastPage ?? existing?.lastPage ?? 1,
-      zoom: file.zoom !== undefined ? file.zoom : existing?.zoom,
-    };
-    await db.files.put(merged);
-  },
-
-  // Save PDF file data (Blob)
-  async saveFileData(fileId: string, blob: Blob): Promise<void> {
-    await db.fileData.put({ fileId, blob });
-  },
-
-  // Load PDF Blob
-  async getFileData(fileId: string): Promise<Blob | null> {
-    const data = await db.fileData.get(fileId);
-    return data ? data.blob : null;
-  },
-
-  // Cache a file offline (save its blob and update metadata)
-  async cacheFileOffline(file: ScoreFile, blob: Blob): Promise<void> {
-    await db.transaction('rw', [db.files, db.fileData], async () => {
-      const updatedFile = { ...file, offline: true };
-      await db.files.put(updatedFile);
-      await db.fileData.put({ fileId: file.id, blob });
-    });
-  },
-
-  // Remove file completely (metadata + blob + annotations)
-  async deleteFile(fileId: string): Promise<void> {
-    await db.transaction('rw', [db.files, db.fileData, db.annotations], async () => {
-      await db.files.delete(fileId);
-      await db.fileData.delete(fileId);
-      await db.annotations.where('fileId').equals(fileId).delete();
-    });
-  },
-
-  // Remove blob only (keep metadata but set offline = false)
-  async removeFileFromOffline(fileId: string): Promise<void> {
-    await db.transaction('rw', [db.files, db.fileData], async () => {
-      const file = await db.files.get(fileId);
-      if (file) {
-        file.offline = false;
-        await db.files.put(file);
+    // Save metadata (merges with existing record to prevent overwriting bookmarks or other metadata)
+    async saveFileMetadata(file: ScoreFile): Promise<void> {
+      const existing = await db.files.get(file.id);
+      if (!existing && !file.offline) {
+        // Don't auto-create a library record for previewing unsaved shared scores
+        return;
       }
-      await db.fileData.delete(fileId);
-    });
-  },
+      const merged: ScoreFile = {
+        ...existing,
+        ...file,
+        bookmarks: file.bookmarks !== undefined ? file.bookmarks : existing?.bookmarks,
+        lastPage: file.lastPage ?? existing?.lastPage ?? 1,
+        zoom: file.zoom !== undefined ? file.zoom : existing?.zoom,
+      };
+      await db.files.put(merged);
+    },
 
-  // Save a custom filter preset
-  async savePreset(preset: CustomPreset): Promise<void> {
-    await db.customPresets.put(preset);
-  },
+    // Save PDF file data (Blob)
+    async saveFileData(fileId: string, blob: Blob): Promise<void> {
+      await db.fileData.put({ fileId, blob });
+    },
 
-  // Get custom presets
-  async getPresets(): Promise<CustomPreset[]> {
-    return db.customPresets.toArray();
-  },
+    // Load PDF Blob
+    async getFileData(fileId: string): Promise<Blob | null> {
+      const data = await db.fileData.get(fileId);
+      return data ? data.blob : null;
+    },
 
-  // Delete a custom preset
-  async deletePreset(id: string): Promise<void> {
-    await db.customPresets.delete(id);
-  }
-};
+    // Cache a file offline (save its blob and update metadata)
+    async cacheFileOffline(file: ScoreFile, blob: Blob): Promise<void> {
+      await db.transaction('rw', [db.files, db.fileData], async () => {
+        const updatedFile = { ...file, offline: true };
+        await db.files.put(updatedFile);
+        await db.fileData.put({ fileId: file.id, blob });
+      });
+    },
+
+    // Remove file completely (metadata + blob + annotations)
+    async deleteFile(fileId: string): Promise<void> {
+      await db.transaction('rw', [db.files, db.fileData, db.annotations], async () => {
+        await db.files.delete(fileId);
+        await db.fileData.delete(fileId);
+        await db.annotations.where('fileId').equals(fileId).delete();
+      });
+    },
+
+    // Remove blob only (keep metadata but set offline = false)
+    async removeFileFromOffline(fileId: string): Promise<void> {
+      await db.transaction('rw', [db.files, db.fileData], async () => {
+        const file = await db.files.get(fileId);
+        if (file) {
+          file.offline = false;
+          await db.files.put(file);
+        }
+        await db.fileData.delete(fileId);
+      });
+    },
+
+    // Save a custom filter preset
+    async savePreset(preset: CustomPreset): Promise<void> {
+      await db.customPresets.put(preset);
+    },
+
+    // Get custom presets
+    async getPresets(): Promise<CustomPreset[]> {
+      return db.customPresets.toArray();
+    },
+
+    // Delete a custom preset
+    async deletePreset(id: string): Promise<void> {
+      await db.customPresets.delete(id);
+    }
+  };
+}
+
+export type LibraryStorage = ReturnType<typeof createStorageService>;

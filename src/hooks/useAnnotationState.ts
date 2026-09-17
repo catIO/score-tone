@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { AnnotationStroke, AnnotationTool } from '../services/storageService';
-import { annotationService } from '../services/annotationService';
+import { createAnnotationService } from '../services/annotationService';
+import { useLibraryStorage } from './useLibraryStorage';
 
 export type CurrentTool = AnnotationTool | 'eraser';
 
@@ -40,6 +41,8 @@ export interface UseAnnotationStateReturn {
 }
 
 export function useAnnotationState(fileId?: string): UseAnnotationStateReturn {
+  const { db } = useLibraryStorage();
+  const [annotationService] = useState(() => createAnnotationService(db));
   const [isAnnotating, setIsAnnotating] = useState<boolean>(false);
   const [activeTool, setActiveTool] = useState<CurrentTool>('pen');
   const [activeSizeIndex, setActiveSizeIndex] = useState<number>(2); // Default to middle size index (5px pen / 24px highlighter)

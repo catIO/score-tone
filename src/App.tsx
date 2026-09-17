@@ -1,14 +1,53 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import LibraryPage from './components/LibraryPage';
 import ViewerPage from './components/ViewerPage';
 import { settingsService, type AppSettings } from './services/settingsService';
-import { storageService, type ScoreFile } from './services/storageService';
-import { googleDriveService } from './services/googleDriveService';
+import { createStorageService, type ScoreFile } from './services/storageService';
+import { googleDriveService, GOOGLE_ACCOUNT_CHANGED_EVENT, type GoogleAccountChangedDetail } from './services/googleDriveService';
+import { LibraryStorageContext, useLibraryStorage } from './hooks/useLibraryStorage';
 import { Loader2, AlertCircle, X } from 'lucide-react';
 import UpdatePrompt from './components/UpdatePrompt';
 import { forceReleaseWakeLock } from './hooks/useWakeLock';
 
 export const App: React.FC = () => {
+  const [session, setSession] = useState(() => ({
+    accountId: googleDriveService.getUserProfile()?.sub ?? null,
+    revision: 0,
+    openDrive: false,
+  }));
+  const storage = useMemo(() => createStorageService(session.accountId), [session.accountId]);
+
+  useEffect(() => {
+    const onAccountChange = (event: Event) => {
+      const detail = (event as CustomEvent<GoogleAccountChangedDetail>).detail;
+      if (detail.reason === 'reconnected') return;
+      // Never replay the previous user's deep link after switching/logout.
+      if (!detail.initialConnection) window.history.replaceState({}, '', window.location.pathname);
+      forceReleaseWakeLock().catch(() => { });
+      setSession({
+        accountId: detail.accountId, revision: detail.revision,
+        openDrive: detail.initialConnection || detail.reason === 'account-changed'
+      });
+    };
+    window.addEventListener(GOOGLE_ACCOUNT_CHANGED_EVENT, onAccountChange);
+    return () => window.removeEventListener(GOOGLE_ACCOUNT_CHANGED_EVENT, onAccountChange);
+  }, []);
+
+  return (
+    <LibraryStorageContext.Provider value={storage}>
+      <AccountApp key={`${session.accountId ?? 'device'}:${session.revision}`} openDriveOnMount={session.openDrive} />
+    </LibraryStorageContext.Provider>
+  );
+};
+
+const AccountApp: React.FC<{ openDriveOnMount: boolean }> = ({ openDriveOnMount }) => {
+  const storageService = useLibraryStorage();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const isCurrentLibrary = () => mounted.current && storageService.accountId === (googleDriveService.getUserProfile()?.sub ?? null);
   const [activePage, setActivePage] = useState<'library' | 'viewer'>('library');
   const [activeFile, setActiveFile] = useState<ScoreFile | null>(null);
   const [inMemoryBlob, setInMemoryBlob] = useState<Blob | undefined>(undefined);
@@ -53,6 +92,11 @@ export const App: React.FC = () => {
         const filesList = await storageService.getFiles();
         const existing = filesList.find((f) => f.id === targetId);
         const cachedBlob = await storageService.getFileData(targetId);
+        if (!isCurrentLibrary()) return;
+        if (!existing && targetId.startsWith('local-')) {
+          setImportError('This local score is not in the selected library on this device. Import the file or return to the device library.');
+          return;
+        }
 
         // Build the file object, overriding lastPage if a page param was provided
         const makeFileObj = (base: typeof existing, offline: boolean) => ({
@@ -77,7 +121,7 @@ export const App: React.FC = () => {
           // Show the loader during token acquisition and download.
           setSilentAuthPending(true);
           try {
-            // Get non-interactive token if available (reuses valid token or silent refresh)
+            // Reuse a valid in-memory token only; never trigger background auth.
             let token: string | undefined;
             try {
               token = await googleDriveService.getAccessToken({ allowInteractive: false });
@@ -87,6 +131,7 @@ export const App: React.FC = () => {
 
             // Download the file using token if available, or via public download strategies
             const blob = await googleDriveService.downloadFile(targetId, token);
+            if (!isCurrentLibrary()) return;
 
             // If the user already has this score in their library, refresh cache & metadata.
             // Otherwise, open it in memory preview mode without automatically saving to library.
@@ -112,11 +157,10 @@ export const App: React.FC = () => {
             setActivePage('viewer');
             setPendingLink(null);
           } catch (err: any) {
+            if (!isCurrentLibrary()) return;
             console.warn('[ScoreTone] Deep link download failed:', err);
-            // Clear token if we got a 401/Unauthorized from Google Drive API
-            if (err.message?.includes('401') || err.message?.toLowerCase().includes('unauthorized')) {
-              googleDriveService.logout();
-            }
+            // The Drive service invalidates only the failed token; an expired
+            // connection must not disconnect/hide the selected offline library.
             // Fall back to showing the user-gesture sign-in gate
             setPendingLink({ driveId: targetId, name: existing ? existing.name : name });
           } finally {
@@ -127,7 +171,7 @@ export const App: React.FC = () => {
         console.error('[ScoreTone] Failed to parse URL parameters', e);
       }
     } else {
-      forceReleaseWakeLock().catch(() => {});
+      forceReleaseWakeLock().catch(() => { });
       setActivePage('library');
       setActiveFile(null);
       setInMemoryBlob(undefined);
@@ -150,25 +194,11 @@ export const App: React.FC = () => {
   const importSharedScore = async (driveId: string, shareName: string) => {
     setImportError(null);
 
-    // Wrap getAccessToken in a timeout: COOP headers on Google's OAuth page can
-    // block GIS's window.closed polling, causing the auth promise to hang forever.
-    // 30 s is long enough for a real interactive popup but recovers from the deadlock.
-    const withAuthTimeout = (promise: Promise<string>, ms = 30000): Promise<string> => {
-      let timer: ReturnType<typeof setTimeout>;
-      const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(
-            'Sign-in timed out. If a popup was blocked, please allow popups for this site and try again.'
-          ));
-        }, ms);
-      });
-      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer!));
-    };
-
     try {
       // 1. Get the token FIRST, synchronously within the click event!
       // This ensures that the popup is opened directly from the user's click gesture.
-      const token = await withAuthTimeout(googleDriveService.getAccessToken());
+      const token = await googleDriveService.getAccessToken();
+      if (!isCurrentLibrary()) return; // The new account tree resumes the deep link.
 
       // Only set importing and clear pending link after we successfully got the token
       setImporting(true);
@@ -230,6 +260,7 @@ export const App: React.FC = () => {
   };
 
   const handleOpenFile = (file: ScoreFile, blob?: Blob, page?: number, queryParams?: Record<string, string>) => {
+    if (!isCurrentLibrary()) return;
     const fileToOpen = page ? { ...file, lastPage: page } : file;
     setActiveFile(fileToOpen);
     setInMemoryBlob(blob);
@@ -275,7 +306,7 @@ export const App: React.FC = () => {
 
   const handleBackToLibrary = () => {
     // Explicitly release screen wake lock whenever exiting the score viewer
-    forceReleaseWakeLock().catch(() => {});
+    forceReleaseWakeLock().catch(() => { });
     setActivePage('library');
     setActiveFile(null);
     setInMemoryBlob(undefined);
@@ -290,7 +321,7 @@ export const App: React.FC = () => {
   // Guarantee that wake lock is strictly released whenever the user is on the library page
   useEffect(() => {
     if (activePage === 'library') {
-      forceReleaseWakeLock().catch(() => {});
+      forceReleaseWakeLock().catch(() => { });
     }
   }, [activePage]);
 
@@ -316,7 +347,7 @@ export const App: React.FC = () => {
         <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-black"
           style={{ border: '1px solid var(--md-outline-variant)' }}>
           <svg viewBox="0 -960 960 960" className="w-9 h-9" fill="#ffffff">
-            <path d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29ZM320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z"/>
+            <path d="M500-360q42 0 71-29t29-71v-220h120v-80H560v220q-13-10-28-15t-32-5q-42 0-71 29t-29 71q0 42 29 71t71 29ZM320-240q-33 0-56.5-23.5T240-320v-480q0-33 23.5-56.5T320-880h480q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H320Zm0-80h480v-480H320v480ZM160-80q-33 0-56.5-23.5T80-160v-560h80v560h560v80H160Zm160-720v480-480Z" />
           </svg>
         </div>
 
@@ -330,7 +361,7 @@ export const App: React.FC = () => {
             <span className="font-semibold" style={{ color: 'var(--md-on-surface)' }}>"{pendingLink.name}"</span>
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--md-on-surface-variant)' }}>
-            Sign in with Google to continue.
+            Reconnect to open an authorized score. Private files may need to be selected with Google Picker from the library first.
           </p>
         </div>
 
@@ -347,10 +378,10 @@ export const App: React.FC = () => {
             className="md-btn-filled w-full py-3 flex items-center justify-center gap-2"
           >
             <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" />
+              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
             </svg>
             Sign in with Google
           </button>
@@ -429,6 +460,9 @@ export const App: React.FC = () => {
 
       {activePage === 'library' ? (
         <LibraryPage
+          settings={appSettings}
+          onSettingsChange={handleSettingsChange}
+          openDriveOnMount={openDriveOnMount}
           onOpenFile={handleOpenFile}
           theme={theme}
           onToggleTheme={handleToggleTheme}

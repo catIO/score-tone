@@ -19,7 +19,7 @@ Currently, ScoreTone uses the least-privilege `drive.file` scope. Under `drive.f
 2. With `drive.readonly`, an authenticated recipient can download any file shared directly with their Google account via the REST API, enabling seamless 1-click link opening for private/restricted files.
 
 ## Trade-offs & Considerations
-- **Sensitive Scope**: Google Cloud considers `drive.readonly` a sensitive scope.
+- **Restricted Scope**: Google classifies `drive.readonly` as restricted, not merely sensitive. A public release requires the applicable restricted-scope verification; server storage/transmission of restricted data also requires a security assessment under Google's guidance. This is not enabled by score-i94r's selected-file import implementation.
   - If the OAuth consent screen is in 'Testing' mode, recipients must be added as 'Test users' in the Google Cloud Console.
   - In production, requesting `drive.readonly` may trigger an 'Unverified App' warning unless Google App Verification is completed.
 - **Privacy Perception**: Users will see a permission prompt asking to 'View your Google Drive files' rather than per-file access.

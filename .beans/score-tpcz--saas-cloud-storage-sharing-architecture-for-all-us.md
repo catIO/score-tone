@@ -51,7 +51,7 @@ To evolve ScoreTone into a seamless, multi-tenant commercial SaaS product servin
 
 ### Phase 1: Zero-Friction Multi-User Cloud Storage
 - [ ] **Google Cloud App Verification**: Submit the OAuth consent screen to Google for verification. Eliminates the *"Google hasn't verified this app"* warning for all external users.
-- [ ] **Tenant-Neutral Configuration**: Ensure `VITE_GOOGLE_DRIVE_FOLDER_ID` is purely an optional user-level setting rather than a deployment global. Default to searching the authenticated user's entire Drive.
+- [x] **Tenant-Neutral Selected-File Import**: Implemented in score-i94r. Removed deployment-global folder filtering; Google Picker grants new files under drive.file, while the native list only searches previously authorized scores. Each verified Google sub has a separate offline library; legacy data remains in the device library. Optional folder preferences and full-Drive browsing are not part of this delivery.
 - [ ] **Multi-Provider Storage Abstraction**: Abstract cloud storage under a unified `CloudProvider` interface (`list()`, `download()`, `search()`) to support Google Drive, Dropbox, OneDrive, and Apple iCloud/Files.
 
 ### Phase 2: Bulletproof Score Sharing for Teachers & Students
@@ -69,3 +69,7 @@ To evolve ScoreTone into a seamless, multi-tenant commercial SaaS product servin
 ### Phase 4: Browser Observability & Auto-Adaptation
 - [ ] **Client Capability Detection**: Programmatically detect third-party cookie restrictions or Brave Shields upon initial interaction.
 - [ ] **Adaptive Routing**: Automatically direct users to the native in-app browser when privacy restrictions are detected, completely eliminating iframe errors before they occur.
+
+## Implementation correction — September 17, 2026
+
+The cookie-based root-cause analysis above is a hypothesis, not verified across browsers. Invalid-key errors also require checking project alignment, API restrictions and origins. The native REST list is not a replacement grant path under drive.file; pasted private links do not authorize access. Do not require users to make private files public. Browser fallback now explicitly offers device import, rather than promising whole-Drive access or universal iframe recovery. OAuth renewal is user-driven, not guaranteed silent/background authentication. Public verification and managed sharing remain outstanding; see score-i94r for the completed client-side foundation.

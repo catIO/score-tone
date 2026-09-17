@@ -4,19 +4,27 @@ import {
   CloudOff, X, Music, Repeat, BookOpen, Sliders, Play,
   Bookmark as BookmarkIcon, LayoutGrid, List, Search, ArrowUpDown, Clock
 } from 'lucide-react';
-import { storageService, isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
+import { isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
+import { useLibraryStorage } from '../hooks/useLibraryStorage';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
+import type { AppSettings } from '../services/settingsService';
+import { useDriveConnection } from '../hooks/useDriveConnection';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import HeaderBar from './HeaderBar';
 import { DriveFileBrowser } from './DriveFileBrowser';
 
 interface LibraryPageProps {
+  settings: AppSettings;
+  onSettingsChange: (settings: AppSettings) => void;
+  openDriveOnMount?: boolean;
   onOpenFile: (file: ScoreFile, inMemoryBlob?: Blob, page?: number, queryParams?: Record<string, string>) => void;
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
 }
 
-export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'dark', onToggleTheme }) => {
+export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'dark', onToggleTheme, openDriveOnMount = false, settings, onSettingsChange }) => {
+  const storageService = useLibraryStorage();
+  const isCurrentLibrary = () => storageService.accountId === (googleDriveService.getUserProfile()?.sub ?? null);
   const [files, setFiles] = useState<ScoreFile[]>([]);
   const [subFilter, setSubFilter] = useState<'all' | 'offline' | 'recent'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
@@ -29,12 +37,12 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false); // true only during Drive auth + picker
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [driveToken, setDriveToken] = useState<string | null>(
-    () => googleDriveService.getCachedToken()
-  );
+  const driveToken = useDriveConnection();
+  const [choosingAccount, setChoosingAccount] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
-  const [showDriveBrowser, setShowDriveBrowser] = useState(false);
+  const [showDriveBrowser, setShowDriveBrowser] = useState(() => openDriveOnMount && googleDriveService.hasToken());
   // Share dropdown state: tracks which card's menu is open and which item was just copied
   const [openShareId, setOpenShareId] = useState<string | null>(null);
   const [copiedState, setCopiedState] = useState<{ id: string; type: 'score' | 'page' } | null>(null);
@@ -59,6 +67,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     const handleKeyDown = (e: KeyboardEvent) => {
       if (showAboutModal || showGuideModal) return;
       const target = e.target as HTMLElement | null;
+      if (target?.closest('[role="dialog"]')) return;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
@@ -218,8 +227,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     setConnecting(true);
     setErrorMsg(null);
     try {
-      const token = await googleDriveService.getAccessToken();
-      setDriveToken(token);
+      await googleDriveService.getAccessToken();
+      if (!isCurrentLibrary()) return;
       setShowDriveBrowser(true);
     } catch (err: any) {
       setErrorMsg(err.message || 'Google sign-in failed.');
@@ -233,18 +242,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     setLoading(true);
     setErrorMsg(null);
     try {
-      const token = driveToken || await googleDriveService.getAccessToken().catch(() => undefined);
+      const token = await googleDriveService.getAccessToken({ allowInteractive: false });
+      if (!isCurrentLibrary()) return;
       const currentFiles = await storageService.getFiles();
       const existing = currentFiles.find(f => f.id === metadata.id);
 
       const cachedBlob = await storageService.getFileData(metadata.id);
       if (cachedBlob) {
         const fileToOpen: ScoreFile = existing
-          ? { ...existing, lastOpened: Date.now(), offline: true, size: metadata.size, thumbnail: metadata.thumbnailLink }
+          ? { ...existing, fileType: isMusicXmlFile(metadata) ? 'musicxml' : 'pdf', lastOpened: Date.now(), offline: true, size: metadata.size, thumbnail: metadata.thumbnailLink }
           : {
             id: metadata.id,
-            name: metadata.name.replace(/\.pdf$/i, ''),
+            name: metadata.name.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
             source: 'google-drive',
+            fileType: isMusicXmlFile(metadata) ? 'musicxml' : 'pdf',
             lastOpened: Date.now(),
             lastPage: 1,
             offline: true,
@@ -259,11 +270,13 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
       }
 
       const blob = await googleDriveService.downloadFile(metadata.id, token);
+      if (!isCurrentLibrary()) return;
       const newFile: ScoreFile = {
         ...(existing || {}),
         id: metadata.id,
-        name: metadata.name.replace(/\.pdf$/i, ''),
+        name: metadata.name.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
         source: 'google-drive',
+        fileType: isMusicXmlFile(metadata) ? 'musicxml' : 'pdf',
         lastOpened: Date.now(),
         lastPage: existing?.lastPage ?? 1,
         offline: true,
@@ -301,27 +314,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
           setLoading(false);
           return;
         }
-        let token = driveToken;
-        if (!token) {
-          try {
-            token = await googleDriveService.getAccessToken({ allowInteractive: false });
-            if (token) setDriveToken(token);
-          } catch {
-            // fall through to attempt download with cached/public strategies
-          }
-        }
-        let blob: Blob;
-        try {
-          blob = await googleDriveService.downloadFile(file.id, token || undefined);
-        } catch (downloadErr: any) {
-          if (isGoogleConfigured && file.source === 'google-drive') {
-            token = await googleDriveService.getAccessToken({ allowInteractive: true });
-            setDriveToken(token);
-            blob = await googleDriveService.downloadFile(file.id, token);
-          } else {
-            throw downloadErr;
-          }
-        }
+        const token = googleDriveService.getCachedToken();
+        const blob = await googleDriveService.downloadFile(file.id, token || undefined);
+        if (!isCurrentLibrary()) return;
         await storageService.cacheFileOffline(file, blob);
         await loadFiles();
       } catch (err: any) {
@@ -348,9 +343,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Intercept library list clicks for Drive files that aren't offline-cached.
-  // We download the blob here (in a user-gesture context) rather than deferring
-  // to ViewerPage's useEffect, where browser popup policy blocks the OAuth call.
+  // Prefer offline copies. Online failures ask for an explicit reconnect;
+  // never launch OAuth after a download has consumed the click gesture.
   const handleFileClick = async (file: ScoreFile, page?: number, queryParams?: Record<string, string>) => {
     if (file.source === 'local' && !file.offline) {
       // Legacy local file without a cached blob — ask user to re-upload it
@@ -381,30 +375,9 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     setLoading(true);
     setErrorMsg(null);
     try {
-      let token = driveToken;
-      if (!token) {
-        try {
-          token = await googleDriveService.getAccessToken({ allowInteractive: false });
-          if (token) setDriveToken(token);
-        } catch {
-          // No cached token available; downloadFile will use cached/public download strategies
-        }
-      }
-
-      let blob: Blob;
-      try {
-        blob = await googleDriveService.downloadFile(file.id, token || undefined);
-      } catch (firstErr: any) {
-        // If downloading failed (e.g. 403 on private file or expired token), retry with interactive auth
-        // since handleFileClick is directly triggered in response to a user click.
-        if (isGoogleConfigured && file.source === 'google-drive') {
-          token = await googleDriveService.getAccessToken({ allowInteractive: true });
-          setDriveToken(token);
-          blob = await googleDriveService.downloadFile(file.id, token);
-        } else {
-          throw firstErr;
-        }
-      }
+      const token = googleDriveService.getCachedToken();
+      const blob = await googleDriveService.downloadFile(file.id, token || undefined);
+      if (!isCurrentLibrary()) return;
 
       await storageService.cacheFileOffline(file, blob);
       await loadFiles();
@@ -561,8 +534,12 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
 
       {/* ── Modern Top App Bar (Bright Sight inspired) ── */}
       <HeaderBar
+        settings={settings}
+        onSettingsChange={onSettingsChange}
+        cloudBusy={connecting || choosingAccount}
+        cloudError={accountError}
         theme={theme}
-        onToggleTheme={onToggleTheme || (() => {})}
+        onToggleTheme={onToggleTheme || (() => { })}
         onAddScore={() => fileInputRef.current?.click()}
         onOpenDrive={isGoogleConfigured ? handleGoogleDrivePick : undefined}
         onOpenGuide={() => setShowGuideModal(true)}
@@ -572,7 +549,18 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
         driveToken={driveToken}
         onDriveLogout={() => {
           googleDriveService.logout();
-          setDriveToken(null);
+        }}
+        onChooseAccount={async () => {
+          if (choosingAccount || connecting || !isOnline) return;
+          setChoosingAccount(true);
+          setAccountError(null);
+          try {
+            await googleDriveService.getAccessToken({ selectAccount: true });
+          } catch (error) {
+            setAccountError(error instanceof Error ? error.message : 'Could not switch Google accounts.');
+          } finally {
+            setChoosingAccount(false);
+          }
         }}
         stats={stats}
       />
@@ -608,6 +596,11 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               {files.length === 0
                 ? '0 scores'
                 : `${filteredFiles.length} of ${files.length} ${files.length === 1 ? 'score' : 'scores'}`}
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--md-on-surface-variant)' }}>
+              {storageService.accountId
+                ? `${googleDriveService.getUserProfile()?.email || 'Google account'} · offline library on this device`
+                : 'Device library · includes scores saved before account libraries were introduced'}
             </p>
           </div>
 
@@ -668,11 +661,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
             >
               <button
                 onClick={() => handleViewModeChange('grid')}
-                className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${
-                  viewMode === 'grid'
+                className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${viewMode === 'grid'
                     ? 'shadow-sm font-bold'
                     : 'opacity-70 hover:opacity-100'
-                }`}
+                  }`}
                 style={{
                   background: viewMode === 'grid' ? 'var(--md-surface-1)' : 'transparent',
                   color: viewMode === 'grid' ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
@@ -684,11 +676,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               </button>
               <button
                 onClick={() => handleViewModeChange('list')}
-                className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${
-                  viewMode === 'list'
+                className={`h-7 px-2.5 rounded-full transition-all flex items-center justify-center ${viewMode === 'list'
                     ? 'shadow-sm font-bold'
                     : 'opacity-70 hover:opacity-100'
-                }`}
+                  }`}
                 style={{
                   background: viewMode === 'list' ? 'var(--md-surface-1)' : 'transparent',
                   color: viewMode === 'list' ? 'var(--md-primary)' : 'var(--md-on-surface-variant)',
@@ -884,9 +875,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               <div
                 key={file.id}
                 onClick={() => handleFileClick(file)}
-                className={`group relative flex flex-col md-card-m3 cursor-pointer select-none ${
-                  openShareId === file.id ? 'z-30' : ''
-                }`}
+                className={`group relative flex flex-col md-card-m3 cursor-pointer select-none ${openShareId === file.id ? 'z-30' : ''
+                  }`}
                 style={{ zIndex: openShareId === file.id ? 35 : undefined }}
               >
                 {/* Score Cover */}
@@ -1104,9 +1094,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               <div
                 key={file.id}
                 onClick={() => handleFileClick(file)}
-                className={`relative flex items-center gap-4 px-4 py-3.5 rounded-2xl cursor-pointer transition-all md-card-m3 group select-none ${
-                  openShareId === file.id ? 'z-30' : ''
-                }`}
+                className={`relative flex items-center gap-4 px-4 py-3.5 rounded-2xl cursor-pointer transition-all md-card-m3 group select-none ${openShareId === file.id ? 'z-30' : ''
+                  }`}
                 style={{ zIndex: openShareId === file.id ? 35 : undefined }}
               >
                 {/* Format Icon: Document (PDF/images) vs Playable (MusicXML) */}
@@ -1303,19 +1292,19 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                 </div>
                 <div className="flex gap-2">
                   <span className="text-amber-500 font-bold">•</span>
-                  <span><strong>Offline Library:</strong> Save scores securely in your browser's IndexedDB for complete offline access.</span>
+                  <span><strong>Offline Library:</strong> Save scores in this browser for offline access. Account libraries are separate, but local data is not an encrypted account lock.</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-amber-500 font-bold">•</span>
-                  <span><strong>Page Sharing:</strong> Generate page-specific links to share your currently viewed score and page directly with others.</span>
+                  <span><strong>Page Links:</strong> Link to a score and page. Recipients still need access to the file; a link does not share permissions or upload local files.</span>
                 </div>
               </div>
               <div className="border-t pt-4" style={{ borderColor: 'var(--md-outline-variant)' }}>
                 <h3 className="font-semibold mb-1" style={{ color: 'var(--md-on-surface)' }}>Google Drive Integration</h3>
                 <p>
-                  Connecting Google Drive allows you to search and select PDF scores using the secure, Google-hosted Picker interface.
-                  We request narrow read-only access to selected files (<code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>drive.file</code>) to retrieve and display your chosen PDF files.
-                  Your files are processed entirely client-side, and your access token is stored temporarily in <code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>sessionStorage</code> (which is discarded when you close the tab).
+                  Select PDF or MusicXML scores with Google Picker, or reopen previously authorized files in the native list.
+                  We request per-file access (<code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>drive.file</code>), which permits more than reading; Score Tone currently only reads your Drive scores.
+                  Tokens stay in memory and are lost on reload. Your account profile is remembered locally for offline library selection, and reconnect is an explicit action. Device import remains available if Google sign-in or Picker is unavailable.
                 </p>
               </div>
 
@@ -1514,6 +1503,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
       )}
       {showDriveBrowser && driveToken && (
         <DriveFileBrowser
+          onImportLocal={() => fileInputRef.current?.click()}
           token={driveToken}
           onSelect={handleDriveFileSelected}
           onClose={() => setShowDriveBrowser(false)}

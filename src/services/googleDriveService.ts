@@ -15,616 +15,508 @@ export interface GoogleDriveFileMetadata {
 }
 
 export interface GoogleUserProfile {
+  sub: string;
   name?: string;
   given_name?: string;
   email?: string;
   picture?: string;
 }
 
-let accessToken: string | null = null;
-let tokenClient: any = null;
-let tokenExpiresAt: number | null = null;
-let refreshTimerId: ReturnType<typeof setTimeout> | null = null;
-let loginHint: string | null = null;
-let authInFlight: Promise<string> | null = null; // deduplicate concurrent getAccessToken() calls
+export const GOOGLE_ACCOUNT_CHANGED_EVENT = 'scoretone:google-account-changed';
+export const GOOGLE_CONNECTION_CHANGED_EVENT = 'scoretone:google-connection-changed';
+export interface GoogleAccountChangedDetail {
+  profile: GoogleUserProfile | null;
+  accountId: string | null;
+  previousAccountId: string | null;
+  revision: number;
+  reason: 'connected' | 'account-changed' | 'reconnected' | 'logout' | 'storage';
+  initialConnection: boolean;
+}
 
 const TOKEN_KEY = 'scoretone_google_token';
 const EXPIRES_KEY = 'scoretone_google_token_expires';
 const LOGIN_HINT_KEY = 'scoretone_google_login_hint';
 const USER_PROFILE_KEY = 'scoretone_google_user_profile';
-
-function isTokenExpiringSoon(bufferMs = 3 * 60 * 1000): boolean {
-  if (!tokenExpiresAt) return true;
-  return Date.now() >= tokenExpiresAt - bufferMs;
-}
-
-function scheduleTokenRefresh(): void {
-  if (refreshTimerId) {
-    clearTimeout(refreshTimerId);
-    refreshTimerId = null;
-  }
-  if (!tokenExpiresAt) return;
-  const refreshAt = tokenExpiresAt - 5 * 60 * 1000; // 5 min before expiry
-  const delay = refreshAt - Date.now();
-  if (delay <= 0) return;
-
-  refreshTimerId = setTimeout(async () => {
-    try {
-      await googleDriveService.silentRefresh();
-      console.info('[ScoreTone] Token silently refreshed in background.');
-    } catch {
-      // Let the next real request handle re-auth
-      console.warn('[ScoreTone] Background token refresh failed; will re-auth on next request.');
-    }
-  }, delay);
-}
-
-// Restore token and login hint on startup if still valid.
-// Token is persisted in localStorage to enable seamless cross-tab link opening
-// without triggering programmatic popup blockers.
-try {
-  const storedToken = localStorage.getItem(TOKEN_KEY);
-  const storedExpires = localStorage.getItem(EXPIRES_KEY);
-  if (storedToken && storedExpires) {
-    const expiresAt = parseInt(storedExpires, 10);
-    // Always restore tokenExpiresAt so getAccessToken() can take the silentRefresh
-    // path even when the stored token is too close to expiry to use directly.
-    tokenExpiresAt = expiresAt;
-    // Add 2-minute safety buffer before using the token directly
-    if (Date.now() < expiresAt - 120000) {
-      accessToken = storedToken;
-      scheduleTokenRefresh();
-    }
-  }
-  loginHint = localStorage.getItem(LOGIN_HINT_KEY);
-} catch (e) {
-  console.warn('[ScoreTone] Failed to restore token from localStorage', e);
-}
-
-// Clear the cached token from memory and localStorage
-function clearStoredToken(): void {
-  accessToken = null;
-  tokenExpiresAt = null;
-  if (refreshTimerId) {
-    clearTimeout(refreshTimerId);
-    refreshTimerId = null;
-  }
-  try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(EXPIRES_KEY);
-    // Preserve loginHint across token clears so silent refresh can still identify the account
-  } catch (e) {
-    console.warn('[ScoreTone] Failed to clear token from localStorage', e);
-  }
-}
-
+const SESSION_EVENT_KEY = 'scoretone_google_session_event';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 const APP_ID = import.meta.env.VITE_GOOGLE_APP_ID || '';
-export const DRIVE_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID || '';
+const LOAD_TIMEOUT_MS = 20_000;
+const AUTH_TIMEOUT_MS = 120_000;
+const PICKER_TIMEOUT_MS = 300_000;
+const SCORE_MIME_TYPES = [
+  'application/pdf', 'application/xml', 'text/xml',
+  'application/vnd.recordare.musicxml+xml', 'application/vnd.recordare.musicxml',
+];
+// Drive sometimes assigns these generic MIME types to MusicXML/MXL uploads.
+const PICKER_MIME_TYPES = [...SCORE_MIME_TYPES, 'text/plain', 'application/zip',
+  'application/x-zip-compressed', 'application/octet-stream'].join(',');
+const SCORE_EXTENSION = /\.(pdf|xml|musicxml|mxl)$/i;
 
-// Helper to dynamically load the Google Identity Services library on-demand
-function loadGsiScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) {
-      resolve();
-      return;
-    }
-    // Check if script is already in the document
-    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Identity Services.')));
-      return;
-    }
+let accessToken: string | null = null;
+let tokenExpiresAt: number | null = null;
+let loginHint: string | null = null;
+let profile: GoogleUserProfile | null = null;
+let sessionRevision = 0;
+let authInFlight: Promise<string> | null = null;
+let cancelAuth: (() => void) | null = null;
 
-    const script = document.createElement('script');
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Identity Services.'));
-    document.head.appendChild(script);
+function readProfile(value: string | null): GoogleUserProfile | null {
+  try {
+    const info = value ? JSON.parse(value) : null;
+    if (!info || typeof info.sub !== 'string' || !info.sub.trim()) return null;
+    return {
+      sub: info.sub,
+      ...Object.fromEntries(['name', 'given_name', 'email', 'picture']
+        .filter(key => typeof info[key] === 'string').map(key => [key, info[key]])),
+    };
+  } catch { return null; }
+}
+
+// Only the selected account's display profile survives reloads, never credentials.
+try {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(EXPIRES_KEY);
+  profile = readProfile(localStorage.getItem(USER_PROFILE_KEY));
+  loginHint = profile?.email || localStorage.getItem(LOGIN_HINT_KEY);
+} catch { /* Storage may be unavailable; auth still works in memory. */ }
+
+export function getSessionRevision(): number { return sessionRevision; }
+
+function isTokenExpiringSoon(bufferMs = 3 * 60 * 1000): boolean {
+  return !tokenExpiresAt || Date.now() >= tokenExpiresAt - bufferMs;
+}
+
+function clearStoredToken(failedToken?: string | null): void {
+  // A late 401 from an old request must not clear a newer account's token.
+  if (failedToken && failedToken !== accessToken) return;
+  accessToken = null;
+  tokenExpiresAt = null;
+  window.dispatchEvent(new Event(GOOGLE_CONNECTION_CHANGED_EVENT));
+}
+
+function invalidateSession(): void {
+  sessionRevision++;
+  clearStoredToken();
+  cancelAuth?.();
+  cancelAuth = null;
+  authInFlight = null;
+}
+
+function assertSession(revision: number): void {
+  if (revision !== sessionRevision) throw new Error('Google account changed. Please select the score again.');
+}
+
+function assertCurrentToken(token: string): void {
+  if (token !== accessToken || isTokenExpiringSoon(0)) {
+    throw new Error('Google Drive connection changed or expired. Reconnect before selecting an online score.');
+  }
+}
+
+function dispatchAccountChange(previousAccountId: string | null, reason: GoogleAccountChangedDetail['reason']): void {
+  const detail: GoogleAccountChangedDetail = {
+    profile: profile ? { ...profile } : null, accountId: profile?.sub ?? null,
+    previousAccountId, revision: sessionRevision, reason,
+    initialConnection: reason === 'connected' && previousAccountId === null,
+  };
+  window.dispatchEvent(new CustomEvent<GoogleAccountChangedDetail>(GOOGLE_ACCOUNT_CHANGED_EVENT, { detail }));
+}
+
+function persistProfile(): void {
+  try {
+    if (profile) localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
+    else localStorage.removeItem(USER_PROFILE_KEY);
+    if (loginHint) localStorage.setItem(LOGIN_HINT_KEY, loginHint);
+    else localStorage.removeItem(LOGIN_HINT_KEY);
+  } catch { /* Offline account selection remains available in this tab. */ }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', event => {
+    if (event.storageArea && event.storageArea !== window.localStorage) return;
+    if (event.key !== null && ![USER_PROFILE_KEY, SESSION_EVENT_KEY, TOKEN_KEY, EXPIRES_KEY].includes(event.key)) return;
+    const previousAccountId = profile?.sub ?? null;
+    invalidateSession();
+    try {
+      // Read the latest value rather than replaying a potentially stale event value.
+      profile = readProfile(localStorage.getItem(USER_PROFILE_KEY));
+      loginHint = profile?.email || localStorage.getItem(LOGIN_HINT_KEY);
+    } catch { profile = null; loginHint = null; }
+    dispatchAccountChange(previousAccountId, 'storage');
   });
 }
 
-// Load the Google Picker API via gapi
-function loadPickerApi(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.google?.picker) {
-      resolve();
-      return;
+const scriptLoads = new Map<string, Promise<void>>();
+function loadScript(src: string, ready: () => boolean): Promise<void> {
+  if (ready()) return Promise.resolve();
+  const pending = scriptLoads.get(src);
+  if (pending) return pending;
+  const promise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+    const script = existing ?? document.createElement('script');
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      script.removeEventListener('load', onLoad);
+      script.removeEventListener('error', onError);
+      if (error) {
+        script.remove();
+        reject(error);
+      } else resolve();
+    };
+    const onLoad = () => finish(ready() ? undefined : new Error('Google library loaded but is unavailable. Please retry.'));
+    const onError = () => finish(new Error('Could not load Google services. Check your connection and browser settings, then retry.'));
+    const timer = setTimeout(() => finish(new Error('Loading Google services timed out. Please retry.')), LOAD_TIMEOUT_MS);
+    script.addEventListener('load', onLoad);
+    script.addEventListener('error', onError);
+    if (!existing) {
+      script.src = src;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
     }
-
-    const loadGapi = (): Promise<void> => new Promise((res, rej) => {
-      if (window.gapi?.load) { res(); return; }
-      const existing = document.querySelector('script[src="https://apis.google.com/js/api.js"]');
-      if (existing) {
-        existing.addEventListener('load', () => res());
-        existing.addEventListener('error', () => rej(new Error('Failed to load gapi.')));
-        return;
-      }
-      const s = document.createElement('script');
-      s.src = 'https://apis.google.com/js/api.js';
-      s.async = true;
-      s.defer = true;
-      s.onload = () => res();
-      s.onerror = () => rej(new Error('Failed to load gapi.'));
-      document.head.appendChild(s);
-    });
-
-    loadGapi().then(() => {
-      window.gapi.load('picker', { callback: resolve, onerror: () => reject(new Error('Failed to load Picker API.')) });
-    }).catch(reject);
   });
+  scriptLoads.set(src, promise);
+  void promise.catch(() => scriptLoads.delete(src));
+  return promise;
+}
+
+function loadGsiScript(): Promise<void> {
+  return loadScript('https://accounts.google.com/gsi/client', () => !!window.google?.accounts?.oauth2);
+}
+
+async function loadPickerApi(): Promise<void> {
+  if (window.google?.picker) return;
+  await loadScript('https://apis.google.com/js/api.js', () => !!window.gapi?.load);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => finish(new Error('Google Picker loading timed out. Please retry.')), LOAD_TIMEOUT_MS);
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      if (error) reject(error); else resolve();
+    };
+    try {
+      window.gapi.load('picker', {
+        callback: () => finish(),
+        onerror: () => finish(new Error('Google Picker could not load. Please retry or import a device file.')),
+        timeout: LOAD_TIMEOUT_MS,
+        ontimeout: () => finish(new Error('Google Picker loading timed out. Please retry.')),
+      });
+    } catch { finish(new Error('Google Picker could not initialize. Please retry.')); }
+  });
+}
+
+function oauthError(error: any): Error {
+  if (error?.type === 'popup_failed_to_open') return new Error('Sign-in popup blocked. Allow popups for this site and reconnect.');
+  if (error?.type === 'popup_closed') return new Error('Sign-in popup closed. Reconnect when ready.');
+  // Do not surface raw OAuth objects or potentially credential-bearing responses.
+  return error instanceof Error ? error : new Error('Google sign-in failed. Reconnect and grant access to selected Drive files.');
+}
+
+function metadata(data: any): GoogleDriveFileMetadata {
+  if (typeof data?.id !== 'string' || !data.id || typeof data.name !== 'string' || !data.name) {
+    throw new Error('Google Drive returned incomplete score details. Select the file again with Google Picker.');
+  }
+  return {
+    id: data.id, name: data.name, size: Number(data.size) || 0,
+    modifiedTime: data.modifiedTime, thumbnailLink: data.thumbnailLink,
+  };
+}
+
+function isSupportedScore(file: { name: string; mimeType?: string }): boolean {
+  return SCORE_EXTENSION.test(file.name) || SCORE_MIME_TYPES.includes(file.mimeType ?? '');
 }
 
 export const googleDriveService = {
-  isConfigured(): boolean {
-    return !!CLIENT_ID;
-  },
+  isConfigured(): boolean { return !!CLIENT_ID; },
+  hasToken(): boolean { return !!this.getCachedToken(); },
+  isTokenExpiringSoon,
+  getSessionRevision,
 
-  hasToken(): boolean {
-    return !!accessToken;
-  },
-
-  isTokenExpiringSoon(bufferMs?: number): boolean {
-    return isTokenExpiringSoon(bufferMs);
-  },
-
-  // Initialize Google OAuth2 Token Client (no picker needed).
-  // expectedState — the state value sent with requestAccessToken; validated in the
-  // callback closure so each call site has its own isolated state (no shared storage).
-  ensureTokenClient(onTokenFetched: (token: string) => void, onError: (err: any) => void, expectedState?: string): void {
-    if (!window.google?.accounts?.oauth2) {
-      loadGsiScript().then(() => {
-        this.ensureTokenClient(onTokenFetched, onError, expectedState);
-      }).catch(onError);
-      return;
-    }
-
-    try {
-      // Always (re-)initialize so the callback is fresh
-      tokenClient = window.google.accounts.oauth2.initTokenClient({
-        client_id: CLIENT_ID,
-        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
-        callback: (response: any) => {
-          if (response.error) {
-            onError(response);
-            return;
-          }
-
-          // CSRF check — compare against the closure-captured expected state,
-          // not sessionStorage, to avoid race conditions between concurrent calls.
-          if (expectedState && (!response.state || response.state !== expectedState)) {
-            onError(new Error('OAuth state check failed. Possible CSRF request.'));
-            return;
-          }
-
-          accessToken = response.access_token;
-
-          // Persist token in localStorage so other tabs can load it without popups
-          try {
-            const expiresAt = Date.now() + (response.expires_in || 3600) * 1000;
-            tokenExpiresAt = expiresAt;
-            localStorage.setItem(TOKEN_KEY, response.access_token);
-            localStorage.setItem(EXPIRES_KEY, expiresAt.toString());
-            scheduleTokenRefresh();
-          } catch (e) {
-            console.warn('[ScoreTone] Failed to save token to localStorage', e);
-          }
-
-          // Fetch user profile info (name, email, avatar)
-          fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-            headers: { Authorization: `Bearer ${response.access_token}` }
-          })
-            .then(r => r.ok ? r.json() : null)
-            .then(info => {
-              if (info) {
-                if (info.email) {
-                  loginHint = info.email;
-                  try { localStorage.setItem(LOGIN_HINT_KEY, info.email); } catch { /* ignore */ }
-                }
-                try {
-                  const profile: GoogleUserProfile = {
-                    name: info.name,
-                    given_name: info.given_name,
-                    email: info.email,
-                    picture: info.picture,
-                  };
-                  localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
-                } catch { /* ignore */ }
-              }
-            })
-            .catch(() => { /* non-critical */ });
-
-          onTokenFetched(response.access_token);
-        },
-        error_callback: (error: any) => {
-          onError(error);
-        }
-      });
-    } catch (err) {
-      onError(err);
-    }
-  },
-
-  // Attempt a silent token refresh (no popup). Requires prior user consent.
-  // NOTE: State validation is intentionally omitted here because silent refresh
-  // has no redirect/popup surface vulnerable to CSRF, and some GIS implementations
-  // do not echo the state parameter in prompt:'' flows.
+  // Compatibility only: never performs a background/silent OAuth request.
   async silentRefresh(): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const initAndRequest = () => {
-        this.ensureTokenClient(
-          (token) => resolve(token),
-          (err) => {
-            clearStoredToken();
-            reject(err);
-          }
-        );
-        if (!tokenClient) { reject(new Error('No token client')); return; }
-        // prompt: '' = silent; login_hint avoids account picker for multi-account users
-        tokenClient.requestAccessToken({ prompt: '', ...(loginHint ? { login_hint: loginHint } : {}) });
-      };
-
-      if (!window.google?.accounts?.oauth2) {
-        loadGsiScript().then(initAndRequest).catch(reject);
-      } else {
-        initAndRequest();
-      }
-    });
+    return this.getAccessToken({ allowInteractive: false });
   },
 
-  // Return cached token immediately, attempt silent refresh if expiring soon,
-  // or trigger the OAuth popup and wait for the result.
-  // Must only be called from a user-gesture context the first time (browser popup policy).
-  async getAccessToken(options?: { allowInteractive?: boolean }): Promise<string> {
-    const allowInteractive = options?.allowInteractive ?? true;
-
-    // Fast path: token still valid and not expiring soon
-    if (accessToken && !isTokenExpiringSoon()) {
-      return accessToken;
-    }
-
-    // Deduplicate: if an auth is already in flight (e.g. background timer racing
-    // with a user click), reuse the same promise instead of starting a second one.
+  // Call interactive auth only from an explicit Connect/Reconnect/Choose account action.
+  async getAccessToken(options?: { allowInteractive?: boolean; selectAccount?: boolean }): Promise<string> {
+    const selectAccount = options?.selectAccount ?? false;
+    const cached = this.getCachedToken();
+    if (!selectAccount && cached) return cached;
+    if (options?.allowInteractive === false) throw new Error('Reconnect Google Drive to access online scores. Offline scores remain available.');
+    if (!CLIENT_ID) throw new Error('Google Drive sign-in is not configured. Import a score from your device instead.');
+    if (selectAccount) invalidateSession();
     if (authInFlight) {
-      return authInFlight;
+      const token = await authInFlight;
+      assertCurrentToken(token);
+      return token;
     }
-
-    const doAuth = async (): Promise<string> => {
-      // Attempt silent refresh if user previously consented (token existed)
-      if (accessToken || tokenExpiresAt) {
+    const revision = sessionRevision;
+    const pending = new Promise<string>((resolve, reject) => {
+      let settled = false;
+      let verifying = false;
+      const controller = new AbortController();
+      const state = crypto.randomUUID();
+      const finish = (error?: Error, token?: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        controller.abort();
+        if (cancelAuth === cancel) cancelAuth = null;
+        if (error) reject(error); else resolve(token!);
+      };
+      const cancel = () => finish(new Error('Google sign-in cancelled because the session changed.'));
+      const timer = setTimeout(() => finish(new Error('Google sign-in timed out. Please reconnect.')), AUTH_TIMEOUT_MS);
+      cancelAuth = cancel;
+      const start = () => {
+        if (settled) return;
         try {
-          const token = await this.silentRefresh();
-          return token;
-        } catch (err) {
-          // Silent refresh failed (e.g. Google session expired); fall through to interactive.
-          console.warn('[ScoreTone] Silent refresh failed, falling back to interactive auth:', err);
-          clearStoredToken();
-        }
-      }
-
-      if (!allowInteractive) {
-        throw new Error('Authentication required');
-      }
-
-      // Full interactive auth (requires user gesture on first call)
-      // Uses default prompt (no prompt param) which shows the account picker
-      // but skips the consent/unverified-app screen if the user already granted
-      // this scope. Only falls back to prompt:'consent' when Google explicitly
-      // responds with consent_required.
-      return new Promise((resolve, reject) => {
-        const state = Math.random().toString(36).substring(2, 15);
-
-        const initAndRequest = () => {
-          this.ensureTokenClient(
-            (token) => resolve(token),
-            (err) => {
-              // Only force consent screen if Google explicitly says consent is needed
-              if (err.error === 'consent_required') {
-                const retryState = Math.random().toString(36).substring(2, 15);
-                this.ensureTokenClient(
-                  (token) => resolve(token),
-                  (retryErr) => {
-                    const errMsg = retryErr.type === 'popup_failed_to_open'
-                      ? 'Popup blocked by browser. Please allow popups for this site to sign in.'
-                      : retryErr.type === 'popup_closed'
-                      ? 'Sign-in popup closed by user.'
-                      : (retryErr.error_description || retryErr.message || 'OAuth authentication failed.');
-                    reject(new Error(errMsg));
-                  },
-                  retryState
-                );
-                tokenClient.requestAccessToken({ prompt: 'consent', state: retryState, ...(loginHint ? { login_hint: loginHint } : {}) });
-                return;
-              }
-              const errMsg = err.type === 'popup_failed_to_open'
-                ? 'Popup blocked by browser. Please allow popups for this site to sign in.'
-                : err.type === 'popup_closed'
-                ? 'Sign-in popup closed by user.'
-                : (err.error_description || err.message || 'OAuth authentication failed.');
-              reject(new Error(errMsg));
+          assertSession(revision);
+          const client = window.google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: `${DRIVE_SCOPE} openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile`,
+            include_granted_scopes: false,
+            state,
+            callback: async (response: any) => {
+              if (settled || verifying) return;
+              verifying = true;
+              try {
+                assertSession(revision);
+                if (response.error) throw oauthError(response);
+                if (response.state !== state) throw new Error('Google sign-in state validation failed. Please reconnect.');
+                if (typeof response.access_token !== 'string' || !response.access_token ||
+                  typeof response.scope !== 'string' || !response.scope.split(/\s+/).includes(DRIVE_SCOPE)) {
+                  throw new Error('Access to selected Drive files was not granted. Reconnect and grant that permission.');
+                }
+                const expiresIn = Number(response.expires_in);
+                if (!Number.isFinite(expiresIn) || expiresIn <= 0) throw new Error('Google returned an invalid token lifetime. Please reconnect.');
+                const expiresAt = Date.now() + expiresIn * 1000;
+                const result = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                  headers: { Authorization: `Bearer ${response.access_token}` }, signal: controller.signal,
+                });
+                if (!result.ok) throw new Error('Could not verify your Google account. Please reconnect.');
+                const verifiedProfile = readProfile(JSON.stringify(await result.json()));
+                if (!verifiedProfile) throw new Error('Google did not return a valid account identifier. Please reconnect.');
+                if (settled) return;
+                assertSession(revision);
+                if (Date.now() >= expiresAt) throw new Error('Google sign-in expired. Please reconnect.');
+                const previousAccountId = profile?.sub ?? null;
+                profile = verifiedProfile;
+                loginHint = profile.email ?? profile.sub;
+                accessToken = response.access_token;
+                tokenExpiresAt = expiresAt;
+                persistProfile();
+                // Complete auth before notifying listeners. The first connection is not
+                // cancellation: consumers should let its pending library action finish.
+                if (previousAccountId !== profile.sub) sessionRevision++;
+                finish(undefined, response.access_token);
+                dispatchAccountChange(previousAccountId, previousAccountId === null ? 'connected'
+                  : previousAccountId !== profile.sub ? 'account-changed' : 'reconnected');
+              } catch (error) { finish(oauthError(error)); }
             },
-            state
-          );
-
-          if (!tokenClient) {
-            reject(new Error('OAuth token client could not be initialized.'));
-            return;
-          }
-          tokenClient.requestAccessToken({ state, ...(loginHint ? { login_hint: loginHint } : {}) });
-        };
-
-        if (!window.google?.accounts?.oauth2) {
-          loadGsiScript().then(initAndRequest).catch(reject);
-        } else {
-          initAndRequest();
-        }
-      });
-    };
-
-    authInFlight = doAuth().finally(() => { authInFlight = null; });
-    return authInFlight;
+            error_callback: (error: any) => finish(oauthError(error)),
+          });
+          client.requestAccessToken({
+            state,
+            ...(selectAccount ? { prompt: 'select_account' } : loginHint ? { login_hint: loginHint } : {}),
+          });
+        } catch (error) { finish(oauthError(error)); }
+      };
+      if (window.google?.accounts?.oauth2) start();
+      else void loadGsiScript().then(start, error => finish(oauthError(error)));
+    });
+    authInFlight = pending;
+    try {
+      const token = await pending;
+      assertCurrentToken(token);
+      return token;
+    }
+    finally { if (authInFlight === pending) authInFlight = null; }
   },
 
-  // List PDF files from Google Drive using the REST API directly (no Picker widget needed).
-  // Falls back to a global Drive search if a folder filter yields no results (either HTTP error or empty list).
-  async listPdfFiles(token: string, pageToken?: string, searchTerm?: string): Promise<{ files: GoogleDriveFileMetadata[]; nextPageToken?: string; isFiltered: boolean }> {
-    const fields = encodeURIComponent('nextPageToken,files(id,name,size,modifiedTime,thumbnailLink)');
-    const escapedSearch = searchTerm ? searchTerm.replace(/'/g, "\\'") : '';
-
-    const buildUrl = (includeFolder: boolean) => {
-      let q = `(mimeType='application/pdf' or mimeType='application/xml' or mimeType='text/xml' or mimeType='application/vnd.recordare.musicxml+xml' or mimeType='application/vnd.recordare.musicxml' or mimeType='text/plain' or name contains '.xml' or name contains '.musicxml' or name contains '.mxl' or name contains '.pdf') and trashed=false`;
-      if (includeFolder && DRIVE_FOLDER_ID) q += ` and '${DRIVE_FOLDER_ID}' in parents`;
-      if (escapedSearch) q += ` and name contains '${escapedSearch}'`;
-      return `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${fields}&orderBy=modifiedTime+desc&pageSize=100${pageToken ? `&pageToken=${pageToken}` : ''
-        }`;
-    };
-
-    const doFetch = async (url: string) => {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) {
-        if (res.status === 401) clearStoredToken();
-        throw new Error(`Failed to list Drive files: ${res.statusText}`);
-      }
-      return res.json();
-    };
-
-    // First attempt: with folder filter (if configured)
-    if (DRIVE_FOLDER_ID) {
-      try {
-        const data = await doFetch(buildUrl(true));
-        const driveFiles: any[] = data.files || [];
-
-        // Google quirk: a 200 with 0 files when the folder isn't shared with the user
-        if (driveFiles.length > 0 || !searchTerm) {
-          // If we got results (or no search term to broaden), return them.
-          // A legitimate empty folder should fall through only on initial load.
-          if (driveFiles.length > 0) {
-            return {
-              files: driveFiles.map((f: any) => ({
-                id: f.id, name: f.name,
-                size: parseInt(f.size || '0', 10),
-                modifiedTime: f.modifiedTime,
-                thumbnailLink: f.thumbnailLink
-              })),
-              nextPageToken: data.nextPageToken,
-              isFiltered: true
-            };
-          }
-        }
-        console.warn('[ScoreTone] Folder filter returned 0 results, falling back to global Drive search.');
-      } catch (err: any) {
-        // HTTP error with folder filter — fall through to global search
-        console.warn('[ScoreTone] Folder filter request failed, falling back to global Drive search.', err.message);
-      }
-    }
-
-    // Fallback (or primary if no folder configured): global Drive search
-    const data = await doFetch(buildUrl(false));
-    const driveFiles: any[] = data.files || [];
-    return {
-      files: driveFiles.map((f: any) => ({
-        id: f.id, name: f.name,
-        size: parseInt(f.size || '0', 10),
-        modifiedTime: f.modifiedTime,
-        thumbnailLink: f.thumbnailLink
-      })),
-      nextPageToken: data.nextPageToken,
-      isFiltered: false
-    };
-  },
-
-  // Download a Google Drive file's content as a Blob.
-  // Accepts an already-acquired token to avoid redundant getAccessToken() calls
-  // when the caller already holds a valid token.
-  // Pass an AbortSignal to cancel the request (e.g. for a download timeout).
-  async downloadFile(fileId: string, existingToken?: string, signal?: AbortSignal): Promise<Blob> {
-    let token = existingToken;
-    if (!token) {
-      try {
-        token = await this.getAccessToken({ allowInteractive: false });
-      } catch {
-        // No cached/silent token available; proceed to public download strategies
-      }
-    }
-
-    // Strategy 1: Authenticated download using token via Drive API v3
-    if (token) {
-      try {
-        const response = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-          { headers: { Authorization: `Bearer ${token}` }, signal }
-        );
-
-        if (response.ok) {
-          return await response.blob();
-        }
-
-        if (response.status === 401) clearStoredToken();
-
-        // 403 / 404 can happen when the token scope (drive.file) does not grant access
-        // to a shared link created by another user. Fall through to public download.
-        console.warn(`[ScoreTone] Authenticated download returned HTTP ${response.status}. Trying public download fallback.`);
-      } catch (err: any) {
-        if (err.name === 'AbortError') throw err;
-        console.warn('[ScoreTone] Authenticated download error:', err);
-      }
-    }
-
-    // Strategy 2: Google Drive API v3 with API key (unauthenticated request)
-    try {
-      const apiKeyParam = API_KEY ? `&key=${API_KEY}` : '';
-      const response = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media${apiKeyParam}`,
-        { signal }
-      );
-      if (response.ok) {
-        return await response.blob();
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') throw err;
-    }
-
-    // Strategy 3: Google Drive Media CDN for public files (lh3.googleusercontent.com)
-    try {
-      const response = await fetch(`https://lh3.googleusercontent.com/d/${fileId}`, { signal });
-      if (response.ok) {
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('text/html')) {
-          return await response.blob();
-        }
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') throw err;
-    }
-
-    // Strategy 4: Google Drive public direct export (uc?export=download)
-    try {
-      const response = await fetch(`https://docs.google.com/uc?export=download&id=${fileId}&confirm=t`, { signal });
-      if (response.ok) {
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('text/html')) {
-          return await response.blob();
-        }
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') throw err;
-    }
-
-    throw new Error(
-      'Failed to download file from Google Drive: HTTP 403. Please verify that the file sharing setting in Google Drive is set to "Anyone with the link" or that your account has access.'
-    );
-  },
-
-  // Fetch updated metadata for a single file on Google Drive
-  async getFileMetadata(fileId: string, token?: string | null): Promise<GoogleDriveFileMetadata> {
-    const apiKeyParam = API_KEY ? `&key=${API_KEY}` : '';
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,size,modifiedTime,thumbnailLink${apiKeyParam}`,
-      { headers }
-    );
-
+  // drive.file only lists files already authorized for this app; never all Drive.
+  // The historic method name is retained for callers; all supported scores are listed.
+  async listPdfFiles(token: string, pageToken?: string, searchTerm?: string): Promise<{ files: GoogleDriveFileMetadata[]; nextPageToken?: string }> {
+    assertCurrentToken(token);
+    const revision = sessionRevision;
+    const escapeQuery = (value: string) => value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    // Generic upload types are filtered by extension after fetching; Drive's
+    // name-contains operator is not a reliable suffix search.
+    const scoreQuery = [...PICKER_MIME_TYPES.split(',').map(type => `mimeType='${type}'`),
+    ...['.pdf', '.xml', '.musicxml', '.mxl'].map(extension => `name contains '${extension}'`)].join(' or ');
+    const q = `trashed=false and (${scoreQuery})${searchTerm ? ` and name contains '${escapeQuery(searchTerm)}'` : ''}`;
+    const params = new URLSearchParams({
+      q, fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,thumbnailLink)',
+      orderBy: 'modifiedTime desc', pageSize: '100',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assertSession(revision);
     if (!response.ok) {
-      if (response.status === 401) clearStoredToken();
-      throw new Error(`Failed to fetch file metadata: ${response.statusText}`);
+      if (response.status === 401) clearStoredToken(token);
+      throw new Error(response.status === 401
+        ? 'Google Drive connection expired. Reconnect to load previously authorized scores.'
+        : `Could not load previously authorized scores (HTTP ${response.status}). Try Google Picker or import a device file.`);
     }
-
     const data = await response.json();
+    assertSession(revision);
     return {
-      id: data.id,
-      name: data.name,
-      size: parseInt(data.size || '0', 10),
-      modifiedTime: data.modifiedTime,
-      thumbnailLink: data.thumbnailLink
+      files: (data.files ?? []).filter(isSupportedScore).map(metadata),
+      nextPageToken: data.nextPageToken,
     };
   },
 
-  // Open Google Picker to let user select a PDF. Files chosen through the Picker
-  // are granted to the app under the drive.file scope.
-  async openPicker(token: string): Promise<GoogleDriveFileMetadata | null> {
-    await loadPickerApi();
-
-    return new Promise((resolve) => {
-      const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
-        .setMimeTypes('application/pdf,application/xml,text/xml')
-        .setMode(window.google.picker.DocsViewMode.LIST)
-        .setLabel('My Music');
-
-      if (DRIVE_FOLDER_ID) {
-        view.setParent(DRIVE_FOLDER_ID);
+  async downloadFile(fileId: string, existingToken?: string, signal?: AbortSignal): Promise<Blob> {
+    if (existingToken) assertCurrentToken(existingToken);
+    const revision = sessionRevision;
+    const token = existingToken || this.getCachedToken();
+    const id = encodeURIComponent(fileId);
+    // Public endpoints can only serve publicly accessible files, not grant access.
+    const requests: { url: string; authenticated?: boolean }[] = [
+      ...(token ? [{ url: `https://www.googleapis.com/drive/v3/files/${id}?alt=media`, authenticated: true }] : []),
+      { url: `https://www.googleapis.com/drive/v3/files/${id}?alt=media${API_KEY ? `&key=${encodeURIComponent(API_KEY)}` : ''}` },
+      { url: `https://lh3.googleusercontent.com/d/${id}` },
+      { url: `https://docs.google.com/uc?export=download&id=${id}&confirm=t` },
+    ];
+    let authenticatedStatus: number | undefined;
+    for (const request of requests) {
+      assertSession(revision);
+      signal?.throwIfAborted();
+      try {
+        const response = await fetch(request.url, {
+          headers: request.authenticated ? { Authorization: `Bearer ${token}` } : undefined, signal,
+        });
+        assertSession(revision);
+        if (request.authenticated && !response.ok) authenticatedStatus = response.status;
+        if (request.authenticated && response.status === 401) clearStoredToken(token);
+        if (response.ok && !(response.headers.get('content-type') || '').includes('text/html')) {
+          const blob = await response.blob();
+          assertSession(revision);
+          return blob;
+        }
+      } catch (error) {
+        assertSession(revision);
+        signal?.throwIfAborted();
+        if (error instanceof Error && error.name === 'AbortError') throw error;
       }
+    }
+    throw new Error(`Could not download this Google Drive score${authenticatedStatus ? ` (authenticated request: HTTP ${authenticatedStatus})` : ''}. Reconnect if needed and select it with Google Picker using an account that has access, or import a device file. A pasted link does not grant access.`);
+  },
 
-      // Primary view: PDFs & MusicXML filtered to the configured folder (or all Drive)
-      const picker = new window.google.picker.PickerBuilder()
-        .addView(view)
-        .addView(new window.google.picker.DocsView()
-          .setMimeTypes('application/pdf,application/xml,text/xml')
+  async getFileMetadata(fileId: string, token?: string | null): Promise<GoogleDriveFileMetadata> {
+    if (token) assertCurrentToken(token);
+    const revision = sessionRevision;
+    const params = new URLSearchParams({ fields: 'id,name,mimeType,size,modifiedTime,thumbnailLink' });
+    if (API_KEY) params.set('key', API_KEY);
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    assertSession(revision);
+    if (!response.ok) {
+      if (response.status === 401 && token) clearStoredToken(token);
+      throw new Error(`Could not read score details (HTTP ${response.status}). Select the file with Google Picker using an account that has access, or import a device file. Pasting a link does not grant permission.`);
+    }
+    const data = await response.json();
+    assertSession(revision);
+    const file = metadata(data);
+    if (!isSupportedScore(data)) throw new Error('Select a PDF, MusicXML (.xml or .musicxml), or compressed MusicXML (.mxl) score.');
+    return file;
+  },
+
+  async openPicker(token: string, signal?: AbortSignal): Promise<GoogleDriveFileMetadata | null> {
+    if (signal?.aborted) return null;
+    assertCurrentToken(token);
+    if (!API_KEY || !APP_ID) throw new Error('Google Picker is not configured. Choose a previously authorized score or import a device file.');
+    const revision = sessionRevision;
+    await loadPickerApi();
+    if (signal?.aborted) return null;
+    assertSession(revision);
+    assertCurrentToken(token);
+    return new Promise((resolve, reject) => {
+      let picker: any;
+      let settled = false;
+      const finish = (file: GoogleDriveFileMetadata | null, error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener(GOOGLE_ACCOUNT_CHANGED_EVENT, onAccountChanged);
+        signal?.removeEventListener('abort', onAbort);
+        try { picker?.setVisible(false); } catch { /* Always attempt disposal. */ }
+        try { picker?.dispose(); } catch { /* Cleanup must not prevent settlement. */ }
+        if (error) reject(error); else resolve(file);
+      };
+      const onAccountChanged = () => {
+        if (revision !== sessionRevision) finish(null, new Error('Google account changed. Open Google Picker again.'));
+      };
+      const onAbort = () => finish(null);
+      const timer = setTimeout(() => finish(null, new Error('Google Picker timed out. Open it again or import a device file.')), PICKER_TIMEOUT_MS);
+      window.addEventListener(GOOGLE_ACCOUNT_CHANGED_EVENT, onAccountChanged);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      try {
+        const view = new window.google.picker.DocsView(window.google.picker.ViewId.DOCS)
+          .setMimeTypes(PICKER_MIME_TYPES)
           .setIncludeFolders(true)
           .setSelectFolderEnabled(false)
-          .setLabel('Google Drive'))
-        .setOAuthToken(token)
-        .setDeveloperKey(API_KEY)
-        .setAppId(APP_ID)
-        .setOrigin(window.location.protocol + '//' + window.location.host)
-        .setTitle('Select a PDF or MusicXML score')
-        .setCallback((data: any) => {
-          if (data.action === window.google.picker.Action.PICKED) {
-            const doc = data.docs[0];
-            resolve({
-              id: doc.id,
-              name: doc.name,
-              size: doc.sizeBytes || 0,
-              modifiedTime: doc.lastEditedUtc ? new Date(doc.lastEditedUtc).toISOString() : undefined,
-              thumbnailLink: doc.iconUrl,
-            });
-          } else if (data.action === window.google.picker.Action.CANCEL) {
-            resolve(null);
-          }
-        })
-        .build();
-
-      picker.setVisible(true);
+          .setMode(window.google.picker.DocsViewMode.LIST);
+        picker = new window.google.picker.PickerBuilder()
+          .addView(view)
+          .setOAuthToken(token)
+          .setDeveloperKey(API_KEY)
+          .setAppId(APP_ID)
+          .setOrigin(window.location.origin)
+          .setTitle('Select a PDF, MusicXML, or MXL score')
+          .setCallback((data: any) => {
+            if (settled) return;
+            try {
+              assertSession(revision);
+              if (data.action === window.google.picker.Action.PICKED) {
+                const doc = data.docs?.[0];
+                const file = metadata({
+                  ...doc, size: doc?.sizeBytes,
+                  modifiedTime: doc?.lastEditedUtc ? new Date(doc.lastEditedUtc).toISOString() : undefined
+                });
+                if (!isSupportedScore(doc)) throw new Error('Select a PDF, MusicXML (.xml or .musicxml), or compressed MusicXML (.mxl) score.');
+                finish(file);
+              } else if (data.action === window.google.picker.Action.CANCEL) finish(null);
+              else if (data.action === 'error' || data.error) {
+                finish(null, new Error('Google Picker reported an error. Check your connection and Picker configuration, then retry or import a device file.'));
+              }
+            } catch (error) { finish(null, error instanceof Error ? error : new Error('Could not read the selected score.')); }
+          })
+          .build();
+        if (settled) { picker.dispose(); return; }
+        picker.setVisible(true);
+      } catch { finish(null, new Error('Google Picker could not open. Check your connection and browser settings, then retry or import a device file.')); }
     });
   },
 
-  // Return the current in-memory token without triggering auth.
-  // Useful for passing to sub-components so they don't need to call getAccessToken().
   getCachedToken(): string | null {
-    return accessToken;
+    return accessToken && !isTokenExpiringSoon() ? accessToken : null;
   },
 
-  // Clear session token (logout/disconnect)
+  // UI-only expiry scheduling; never renew credentials in a timer.
+  getTokenValidityRemainingMs(): number {
+    return accessToken && tokenExpiresAt ? Math.max(0, tokenExpiresAt - Date.now() - 3 * 60 * 1000) : 0;
+  },
+
   logout(): void {
-    clearStoredToken();
+    const previousAccountId = profile?.sub ?? null;
+    invalidateSession();
+    profile = null;
     loginHint = null;
+    persistProfile();
     try {
-      localStorage.removeItem(LOGIN_HINT_KEY);
-      localStorage.removeItem(USER_PROFILE_KEY);
-    } catch { /* ignore */ }
-    tokenClient = null;
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(EXPIRES_KEY);
+      // Notify other tabs even when no profile was persisted in this tab.
+      localStorage.setItem(SESSION_EVENT_KEY, crypto.randomUUID());
+    } catch { /* Local logout always succeeds, even without storage. */ }
+    dispatchAccountChange(previousAccountId, 'logout');
   },
 
-  // Get cached Google user profile (name, email, avatar picture)
-  getUserProfile(): GoogleUserProfile | null {
-    try {
-      const data = localStorage.getItem(USER_PROFILE_KEY);
-      return data ? JSON.parse(data) : null;
-    } catch {
-      return null;
-    }
-  }
+  getUserProfile(): GoogleUserProfile | null { return profile ? { ...profile } : null; },
 };
 
-// Start loading GSI script immediately on import to ensure window.google is ready
-// and ensure ensureTokenClient can run synchronously within click event handlers.
-if (typeof window !== 'undefined') {
-  loadGsiScript().catch((err) => console.warn('[ScoreTone] Preloading GSI script failed:', err));
-}
+// Preload code, not credentials, to keep explicit sign-in inside the click gesture.
+if (typeof window !== 'undefined') void loadGsiScript().catch(() => { /* An explicit reconnect can retry. */ });

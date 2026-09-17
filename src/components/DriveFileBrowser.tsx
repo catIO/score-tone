@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { googleDriveService, GoogleDriveFileMetadata } from '../services/googleDriveService';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { googleDriveService, GoogleDriveFileMetadata, GOOGLE_ACCOUNT_CHANGED_EVENT } from '../services/googleDriveService';
 import { FileText, X, CheckCircle2, Search, Music, Link, Loader2, AlertCircle } from 'lucide-react';
 
 interface DriveFileBrowserProps {
   token: string; // already-acquired access token — avoids redundant getAccessToken() calls
   onSelect: (file: GoogleDriveFileMetadata) => void;
   onClose: () => void;
+  onImportLocal?: () => void;
 }
 
 function parseDriveFileId(input: string): string | null {
@@ -21,7 +22,7 @@ function parseDriveFileId(input: string): string | null {
   return null;
 }
 
-export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSelect, onClose }) => {
+export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSelect, onClose, onImportLocal }) => {
   const [files, setFiles] = useState<GoogleDriveFileMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,43 +32,81 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
   const [openingLink, setOpeningLink] = useState(false);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerNotice, setPickerNotice] = useState<string | null>(null);
-  
-  // Header state (dynamically updated from search results)
-  const [isFilteredByFolder, setIsFilteredByFolder] = useState(false);
+  const requestVersion = useRef(0);
+  const mounted = useRef(false);
+  const pickerController = useRef<AbortController | null>(null);
+  const browserRevision = useRef(googleDriveService.getSessionRevision());
 
   // Search / Link input state
   const [searchInput, setSearchInput] = useState('');
   const [activeSearch, setActiveSearch] = useState('');
 
   const detectedFileId = parseDriveFileId(searchInput);
+  const localImportHelp = onImportLocal
+    ? 'Select a score with Google Picker or import a file from your device.'
+    : 'Select a score with Google Picker, or close this dialog and import a device file from your library.';
+
+  useEffect(() => {
+    mounted.current = true;
+    browserRevision.current = googleDriveService.getSessionRevision();
+    const handleAccountChange = () => {
+      if (browserRevision.current !== googleDriveService.getSessionRevision()) {
+        requestVersion.current++;
+        setFiles([]);
+        setSelected(null);
+        setNextPageToken(undefined);
+        setLoading(false);
+        setLoadingMore(false);
+        setError('Google account changed. Close this dialog and reconnect before selecting a score.');
+      }
+    };
+    window.addEventListener(GOOGLE_ACCOUNT_CHANGED_EVENT, handleAccountChange);
+    return () => {
+      mounted.current = false;
+      requestVersion.current++;
+      pickerController.current?.abort();
+      window.removeEventListener(GOOGLE_ACCOUNT_CHANGED_EVENT, handleAccountChange);
+    };
+  }, [token]);
+
+  const canSelect = () => mounted.current && browserRevision.current === googleDriveService.getSessionRevision();
 
   const loadFiles = useCallback(async (searchQuery?: string) => {
+    const version = ++requestVersion.current;
     try {
       setLoading(true);
+      setLoadingMore(false);
       setError(null);
       setSelected(null);
+      setFiles([]);
+      setNextPageToken(undefined);
       const result = await googleDriveService.listPdfFiles(token, undefined, searchQuery);
+      if (!mounted.current || version !== requestVersion.current) return;
       setFiles(result.files);
       setNextPageToken(result.nextPageToken);
-      setIsFilteredByFolder(result.isFiltered);
     } catch (err: any) {
+      if (!mounted.current || version !== requestVersion.current) return;
       setError(err.message || 'Failed to load Drive files.');
     } finally {
-      setLoading(false);
+      if (mounted.current && version === requestVersion.current) setLoading(false);
     }
   }, [token]);
 
   const loadMore = async () => {
-    if (!nextPageToken) return;
+    if (!nextPageToken || loadingMore || loading) return;
+    const version = requestVersion.current;
     try {
       setLoadingMore(true);
+      setError(null);
       const result = await googleDriveService.listPdfFiles(token, nextPageToken, activeSearch);
-      setFiles(prev => [...prev, ...result.files]);
+      if (!mounted.current || version !== requestVersion.current) return;
+      setFiles(prev => [...new Map([...prev, ...result.files].map(file => [file.id, file])).values()]);
       setNextPageToken(result.nextPageToken);
     } catch (err: any) {
+      if (!mounted.current || version !== requestVersion.current) return;
       setError(err.message);
     } finally {
-      setLoadingMore(false);
+      if (mounted.current && version === requestVersion.current) setLoadingMore(false);
     }
   };
 
@@ -87,47 +126,41 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
 
   const handleConfirm = () => {
     const file = files.find(f => f.id === selected);
-    if (file) onSelect(file);
+    if (file && canSelect()) onSelect(file);
   };
 
   const handleOpenLink = async () => {
-    if (!detectedFileId) return;
+    if (!detectedFileId || openingLink || !canSelect()) return;
     setOpeningLink(true);
     setError(null);
     try {
-      let meta: GoogleDriveFileMetadata;
-      try {
-        meta = await googleDriveService.getFileMetadata(detectedFileId, token);
-      } catch {
-        // Fallback metadata if metadata fetch is restricted
-        meta = {
-          id: detectedFileId,
-          name: 'Shared Drive Score',
-          size: 0,
-        };
-      }
-      onSelect(meta);
+      const meta = await googleDriveService.getFileMetadata(detectedFileId, token);
+      if (canSelect()) onSelect(meta);
     } catch (err: any) {
-      setError(err.message || 'Failed to resolve Google Drive link.');
+      if (mounted.current) setError(err.message || 'Failed to resolve Google Drive link.');
     } finally {
-      setOpeningLink(false);
+      if (mounted.current) setOpeningLink(false);
     }
   };
 
   const handleLaunchPicker = async () => {
+    if (pickerController.current || !canSelect()) return;
+    const controller = new AbortController();
+    pickerController.current = controller;
     setPickerNotice(null);
     setPickerLoading(true);
     try {
-      const picked = await googleDriveService.openPicker(token);
-      if (picked) {
+      const picked = await googleDriveService.openPicker(token, controller.signal);
+      if (picked && canSelect() && !controller.signal.aborted) {
         onSelect(picked);
       }
     } catch (err: any) {
-      setPickerNotice(
-        'Google Picker could not load in this browser (cookies/iframe blocked). You can select files below or paste a share link.'
+      if (mounted.current && !controller.signal.aborted) setPickerNotice(
+        err instanceof Error ? err.message : 'Google Picker could not open. Check your connection and try again.'
       );
     } finally {
-      setPickerLoading(false);
+      if (pickerController.current === controller) pickerController.current = null;
+      if (mounted.current) setPickerLoading(false);
     }
   };
 
@@ -149,6 +182,9 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drive-browser-title"
         className="flex flex-col rounded-2xl overflow-hidden animate-fade-in"
         style={{
           width: 'min(540px, 96vw)',
@@ -162,41 +198,57 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
         <div className="flex items-center justify-between px-5 py-3.5"
           style={{ borderBottom: '1px solid var(--md-outline-variant)' }}>
           <div>
-            <h2 className="text-base font-semibold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
-              {isFilteredByFolder ? 'Score Folder' : 'Google Drive'}
+            <h2 id="drive-browser-title" className="text-base font-semibold" style={{ color: 'var(--md-on-surface)', fontFamily: 'Outfit, sans-serif' }}>
+              Import from Google Drive
             </h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--md-on-surface-variant)' }}>
-              {isFilteredByFolder ? 'Filtered to your scores folder' : 'Browse scores or paste a Drive link'}
+              PDF, MusicXML, and compressed MusicXML (MXL)
             </p>
           </div>
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={handleLaunchPicker}
-              disabled={pickerLoading}
-              className="text-[11px] font-medium px-2.5 py-1 rounded-lg transition-colors border hidden sm:inline-flex items-center gap-1 hover:bg-white/5 active:scale-95"
-              style={{ borderColor: 'var(--md-outline-variant)', color: 'var(--md-on-surface-variant)' }}
-              title="Open Google's native popup picker (works in Chrome/Safari)"
-            >
-              {pickerLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <span>Google Picker</span>}
-            </button>
-            <button onClick={onClose} className="md-icon-btn" style={{ width: 34, height: 34 }}>
+            <button onClick={onClose} aria-label="Close Drive import" className="md-icon-btn" style={{ width: 44, height: 44 }}>
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Picker notice if blocked by browser */}
+        <div className="px-4 pt-3 pb-2">
+          <button
+            onClick={handleLaunchPicker}
+            disabled={pickerLoading || openingLink}
+            aria-busy={pickerLoading}
+            className="md-btn-filled w-full min-h-11 px-4 py-3 flex items-center justify-center gap-2 text-sm font-semibold"
+          >
+            {pickerLoading && <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />}
+            {pickerLoading ? 'Google Picker is open or loading…' : 'Select scores with Google Picker'}
+          </button>
+          <p className="text-xs mt-2" style={{ color: 'var(--md-on-surface-variant)' }}>
+            Only files you select are authorized for this app. The list below is not your entire Drive.
+          </p>
+          {onImportLocal ? (
+            <button onClick={() => { onClose(); onImportLocal(); }} className="md-btn-text min-h-11 w-full text-sm mt-1">
+              Import a device file instead
+            </button>
+          ) : (
+            <p className="text-xs mt-2" style={{ color: 'var(--md-on-surface-variant)' }}>
+              To import a device file, close this dialog and use your library’s local import action.
+            </p>
+          )}
+        </div>
+
+        {/* Picker errors can have network, configuration, or browser causes. */}
         {pickerNotice && (
-          <div className="mx-4 mt-3 p-2.5 rounded-xl flex items-start gap-2 text-xs"
+          <div role="alert" className="mx-4 mt-3 p-2.5 rounded-xl flex items-start gap-2 text-xs"
             style={{ background: 'var(--md-surface-2)', border: '1px solid var(--md-outline-variant)', color: 'var(--md-on-surface-variant)' }}>
             <AlertCircle className="w-4 h-4 shrink-0 text-amber-500 mt-0.5" />
-            <span className="flex-1">{pickerNotice}</span>
-            <button onClick={() => setPickerNotice(null)} className="opacity-60 hover:opacity-100">✕</button>
+            <span className="flex-1">{pickerNotice} {localImportHelp}</span>
+            <button aria-label="Dismiss Picker notice" onClick={() => setPickerNotice(null)} className="opacity-60 hover:opacity-100">✕</button>
           </div>
         )}
 
         {/* Search & Link Input Bar */}
         <form onSubmit={handleSearchSubmit} className="px-4 pt-3 pb-2">
+          <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--md-on-surface)' }}>Previously authorized scores</h3>
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl transition-all"
             style={{ background: 'var(--md-surface-2)', border: '1px solid var(--md-outline-variant)' }}>
             {detectedFileId ? (
@@ -206,10 +258,11 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
             )}
             <input
               type="text"
-              placeholder="Search scores or paste Google Drive link..."
+              aria-label="Search previously authorized scores or paste a Drive link"
+              placeholder="Search authorized scores or paste a link…"
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              className="flex-1 bg-transparent text-xs sm:text-sm focus:outline-none placeholder-[var(--md-on-surface-variant)]"
+              className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm focus:outline-none placeholder-[var(--md-on-surface-variant)]"
               style={{ color: 'var(--md-on-surface)' }}
             />
             {searchInput && (
@@ -223,6 +276,9 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
               </button>
             )}
           </div>
+          <p className="text-[11px] mt-1.5" style={{ color: 'var(--md-on-surface-variant)' }}>
+            Pasting a link does not grant permission. Use Google Picker to authorize a new file.
+          </p>
 
           {/* Quick Action when a Google Drive link is pasted */}
           {detectedFileId && (
@@ -238,7 +294,8 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
                 disabled={openingLink}
                 className="md-btn-filled text-xs py-1.5 px-3 rounded-lg flex items-center gap-1.5 shrink-0"
               >
-                {openingLink ? <Loader2 className="w-3 h-3 animate-spin" /> : <span>Open Link</span>}
+                {openingLink && <Loader2 aria-hidden="true" className="w-3 h-3 animate-spin" />}
+                <span>{openingLink ? 'Checking…' : 'Open Link'}</span>
               </button>
             </div>
           )}
@@ -251,16 +308,16 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
               <div className="w-7 h-7 rounded-full border-2 border-transparent animate-spin"
                 style={{ borderTopColor: 'var(--md-primary)' }} />
               <span className="text-xs" style={{ color: 'var(--md-on-surface-variant)' }}>
-                {activeSearch ? 'Searching Drive…' : 'Loading scores…'}
+                {activeSearch ? 'Searching authorized scores…' : 'Loading previously authorized scores…'}
               </span>
             </div>
           )}
 
           {error && (
-            <div className="rounded-xl p-3.5 mb-2 text-xs"
+            <div role="alert" className="rounded-xl p-3.5 mb-2 text-xs"
               style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}>
               <div className="font-medium mb-1">{error}</div>
-              <div className="opacity-80">Tip: You can also paste a direct Google Drive file share link above.</div>
+              <div className="opacity-80">{localImportHelp}</div>
               <button onClick={() => loadFiles(activeSearch)} className="mt-2 underline font-semibold block">Retry loading files</button>
             </div>
           )}
@@ -270,10 +327,10 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
               style={{ color: 'var(--md-on-surface-variant)' }}>
               <FileText className="w-9 h-9 opacity-30" />
               <span className="text-sm font-medium">
-                {activeSearch ? 'No matching scores found' : 'No scores found in connected folder'}
+                {activeSearch ? 'No matching authorized scores on this page' : 'No previously authorized scores on this page'}
               </span>
               <p className="text-xs max-w-xs opacity-70">
-                Paste any Google Drive share link in the box above to open a score directly.
+                {localImportHelp}
               </p>
             </div>
           )}
@@ -284,7 +341,8 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
                 <button
                   key={file.id}
                   onClick={() => setSelected(file.id)}
-                  onDoubleClick={() => { setSelected(file.id); onSelect(file); }}
+                  onDoubleClick={() => { if (canSelect()) { setSelected(file.id); onSelect(file); } }}
+                  aria-pressed={selected === file.id}
                   className="md-list-item"
                   style={{
                     background: selected === file.id ? 'var(--md-primary-container)' : 'transparent',
@@ -317,16 +375,12 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({ token, onSel
                   )}
                 </button>
               ))}
-              {nextPageToken && (
-                <button
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                  className="md-btn-text w-full py-2 mt-2 text-xs"
-                >
-                  {loadingMore ? 'Loading…' : 'Load more scores'}
-                </button>
-              )}
             </div>
+          )}
+          {!loading && nextPageToken && (
+            <button onClick={loadMore} disabled={loadingMore} className="md-btn-text w-full min-h-11 py-2 mt-2 text-xs">
+              {loadingMore ? 'Loading…' : 'Load more authorized scores'}
+            </button>
           )}
         </div>
 
