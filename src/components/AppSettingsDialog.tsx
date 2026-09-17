@@ -21,15 +21,14 @@ export interface AppSettingsDialogProps {
     onOpenDrive?: () => void;
     onChooseAccount?: () => void;
     onDriveLogout?: () => void;
-    onAddScore: () => void;
     stats?: { totalScores: number; offlineCount: number; driveCount: number };
 }
 
 export function getAccountConnectionStatus(online: boolean, connected: boolean, profile: GoogleUserProfile | null): string {
-    if (!online) return profile ? 'Offline · Account remembered' : 'Offline · Device library';
+    if (!online) return profile ? 'Offline · Account remembered' : 'Offline';
     if (connected) return 'Google Drive connected';
     if (profile) return 'Account remembered · Drive reconnect required';
-    return 'No account connected · Device library';
+    return 'No account connected';
 }
 
 const focusStyle = 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--md-primary)]';
@@ -95,7 +94,7 @@ function PreferenceToggle({ label, description, checked, onChange }: {
 export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
     tab, onTabChange, onClose, settings, onSettingsChange, profile, connected,
     configured, online, cloudBusy = false, cloudError, onOpenDrive, onChooseAccount,
-    onDriveLogout, onAddScore, stats,
+    onDriveLogout, stats,
 }) => {
     const id = useId();
     const dialogRef = useRef<HTMLDivElement>(null);
@@ -248,7 +247,7 @@ export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
                         <div className="flex items-start gap-3">
                             <User className="mt-1 shrink-0 text-[var(--md-primary)]" size={22} aria-hidden="true" />
                             <div className="min-w-0">
-                                <h3 className="break-words text-base font-semibold">{profile?.name || profile?.email || (profile ? 'Google account' : 'Device library')}</h3>
+                                <h3 className="break-words text-base font-semibold">{profile?.name || profile?.email || (profile ? 'Google account' : 'No Google account connected')}</h3>
                                 {profile?.email && profile.name && <p className="break-all text-sm text-[var(--md-on-surface-variant)]">{profile.email}</p>}
                                 <p role="status" className="mt-1 text-xs leading-relaxed text-[var(--md-on-surface-variant)]">{status}</p>
                             </div>
@@ -275,15 +274,9 @@ export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
                         </dl>}
 
                         <div className="space-y-3 text-xs leading-relaxed text-[var(--md-on-surface-variant)]">
-                            <p>Drive access tokens are kept in memory and lost on reload. Your account is remembered, but Drive may need reconnecting.</p>
-                            <p>Disconnecting switches to the device library. Account scores stay saved on this device, hidden until that account is selected again. It does not delete scores or revoke Google access.</p>
-                            {profile && <button type="button" disabled={!onDriveLogout} onClick={onDriveLogout} className={`${secondaryButton} w-full text-[var(--md-on-surface)] sm:w-auto`}>Disconnect · use device library</button>}
+                            <p>Disconnecting stops using this Google account for Drive access. Your library and any downloaded scores stay exactly as they are. It does not delete scores or revoke Google access.</p>
+                            {profile && <button type="button" disabled={!onDriveLogout} onClick={onDriveLogout} className={`${secondaryButton} w-full text-[var(--md-on-surface)] sm:w-auto`}>Disconnect Google account</button>}
                             <a href="https://myaccount.google.com/connections" target="_blank" rel="noopener noreferrer" className={`inline-flex min-h-[44px] items-center gap-2 rounded-lg text-[var(--md-primary)] underline underline-offset-4 ${focusStyle}`}>Manage Google permissions<span className="sr-only"> (opens in a new tab)</span><ExternalLink size={14} aria-hidden="true" /></a>
-                        </div>
-
-                        <div className="border-t pt-4" style={{ borderColor: 'var(--md-outline-variant)' }}>
-                            <p className="mb-3 text-xs leading-relaxed text-[var(--md-on-surface-variant)]">Other cloud providers are not yet supported. Use device import for files downloaded from another provider.</p>
-                            <button type="button" onClick={onAddScore} className={secondaryButton}>Import from device</button>
                         </div>
                     </section>
                 </div>

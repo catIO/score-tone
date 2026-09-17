@@ -68,7 +68,7 @@ describe('HeaderBar settings entry points', () => {
     });
 
     it.each([
-        { name: 'disconnected', remembered: false, token: null, online: true, status: 'No account connected · Device library' },
+        { name: 'disconnected', remembered: false, token: null, online: true, status: 'No account connected' },
         { name: 'remembered', remembered: true, token: null, online: true, status: 'Account remembered · Drive reconnect required' },
         { name: 'active', remembered: true, token: 'cached-token', online: true, status: 'Google Drive connected' },
         { name: 'offline', remembered: true, token: 'cached-token', online: false, status: 'Offline · Account remembered' },
@@ -132,15 +132,6 @@ describe('HeaderBar settings entry points', () => {
         expect(onOpenDrive).toHaveBeenCalledTimes(1);
     });
 
-    it('closes Settings before device import, including offline', () => {
-        const onAddScore = vi.fn(() => expect(screen.queryByRole('dialog')).toBeNull());
-        const { props } = mount({ isOnline: false, onAddScore });
-        openSettings('Account & cloud');
-        fireEvent.click(screen.getByRole('button', { name: 'Import from device' }));
-        expect(onAddScore).toHaveBeenCalledTimes(1);
-        expect(props.onOpenDrive).not.toHaveBeenCalled();
-        expect(screen.queryByRole('dialog')).toBeNull();
-    });
 
     it('forwards choose-account busy and error state while retaining the modal', () => {
         const { props, rerender } = mount();
@@ -156,7 +147,7 @@ describe('HeaderBar settings entry points', () => {
         rerender(<HeaderBar {...props} cloudError="Could not switch Google accounts." />);
         expect(screen.getByRole('alert').textContent).toBe('Could not switch Google accounts.');
         expect(choose.disabled).toBe(false);
-        expect(screen.getByRole('status').textContent).toBe('No account connected · Device library');
+        expect(screen.getByRole('status').textContent).toBe('No account connected');
     });
 });
 

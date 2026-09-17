@@ -2,6 +2,13 @@
 
 Implementation reference for `score-i94r`, reviewed against the current source on September 17, 2026. This describes implemented behavior, not a browser-validation report. **The public-launch manual checks below are not yet browser verified.**
 
+> **Update (score-fsfg, September 17, 2026):** Per-account library partitioning described below was reverted after user
+> feedback that switching/reconnecting a Google account made the library look wiped. The app now always uses a single
+> shared `ScoreToneDatabase`, regardless of which Google account (if any) is connected; a one-time migration folds any
+> existing `ScoreToneDatabase:google:*` database into it. Drive access tokens are also now persisted to this tab's
+> `sessionStorage` (not just memory) so a reload doesn't force a reconnect within the token's lifetime. Sections below
+> describing separate per-account databases are historical context, not current behavior.
+
 ## Deployment and permission model
 
 One ScoreTone deployment uses a shared Google Cloud project, OAuth web client, restricted browser API key, and numeric Picker app ID. Each user consents with their own Google account. Users do not need to create Cloud projects, and the deployment does not route them to its owner's personal Drive folder. `VITE_GOOGLE_DRIVE_FOLDER_ID` is unsupported.

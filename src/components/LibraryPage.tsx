@@ -24,7 +24,16 @@ interface LibraryPageProps {
 
 export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'dark', onToggleTheme, openDriveOnMount = false, settings, onSettingsChange }) => {
   const storageService = useLibraryStorage();
-  const isCurrentLibrary = () => storageService.accountId === (googleDriveService.getUserProfile()?.sub ?? null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  // This tree remounts whenever the active Google account changes, so the
+  // account captured at mount time identifies which session this instance
+  // belongs to. The library itself is shared and never changes with it.
+  const mountedAccountId = useRef(googleDriveService.getUserProfile()?.sub ?? null).current;
+  const isCurrentLibrary = () => mounted.current && mountedAccountId === (googleDriveService.getUserProfile()?.sub ?? null);
   const [files, setFiles] = useState<ScoreFile[]>([]);
   const [subFilter, setSubFilter] = useState<'all' | 'offline' | 'recent'>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
@@ -596,11 +605,6 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
               {files.length === 0
                 ? '0 scores'
                 : `${filteredFiles.length} of ${files.length} ${files.length === 1 ? 'score' : 'scores'}`}
-            </p>
-            <p className="text-xs mt-1" style={{ color: 'var(--md-on-surface-variant)' }}>
-              {storageService.accountId
-                ? `${googleDriveService.getUserProfile()?.email || 'Google account'} · offline library on this device`
-                : 'Device library · includes scores saved before account libraries were introduced'}
             </p>
           </div>
 
@@ -1292,7 +1296,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                 </div>
                 <div className="flex gap-2">
                   <span className="text-amber-500 font-bold">•</span>
-                  <span><strong>Offline Library:</strong> Save scores in this browser for offline access. Account libraries are separate, but local data is not an encrypted account lock.</span>
+                  <span><strong>Offline Library:</strong> Save scores in this browser for offline access. Your library is the same regardless of which Google account is connected; local data is not an encrypted account lock.</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-amber-500 font-bold">•</span>
@@ -1304,7 +1308,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                 <p>
                   Select PDF or MusicXML scores with Google Picker, or reopen previously authorized files in the native list.
                   We request per-file access (<code className="px-1 py-0.5 rounded text-[10px]" style={{ background: 'var(--md-surface-1)', color: 'var(--md-on-surface)' }}>drive.file</code>), which permits more than reading; Score Tone currently only reads your Drive scores.
-                  Tokens stay in memory and are lost on reload. Your account profile is remembered locally for offline library selection, and reconnect is an explicit action. Device import remains available if Google sign-in or Picker is unavailable.
+                  Your Drive connection is kept for this browser session so opening multiple files doesn't require reconnecting every time; it still expires periodically and reconnect is an explicit action. Device import remains available if Google sign-in or Picker is unavailable.
                 </p>
               </div>
 

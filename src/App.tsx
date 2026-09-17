@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import LibraryPage from './components/LibraryPage';
 import ViewerPage from './components/ViewerPage';
 import { settingsService, type AppSettings } from './services/settingsService';
-import { createStorageService, type ScoreFile } from './services/storageService';
+import { createStorageService, migrateLegacyAccountLibraries, type ScoreFile } from './services/storageService';
 import { googleDriveService, GOOGLE_ACCOUNT_CHANGED_EVENT, type GoogleAccountChangedDetail } from './services/googleDriveService';
 import { LibraryStorageContext, useLibraryStorage } from './hooks/useLibraryStorage';
 import { Loader2, AlertCircle, X } from 'lucide-react';
@@ -15,7 +15,13 @@ export const App: React.FC = () => {
     revision: 0,
     openDrive: false,
   }));
-  const storage = useMemo(() => createStorageService(session.accountId), [session.accountId]);
+  // A single shared library is used regardless of which Google account is
+  // connected; Drive accounts only affect what can be imported, never storage.
+  const storage = useMemo(() => createStorageService(null), []);
+
+  useEffect(() => {
+    void migrateLegacyAccountLibraries(storage.db);
+  }, [storage]);
 
   useEffect(() => {
     const onAccountChange = (event: Event) => {
@@ -35,19 +41,26 @@ export const App: React.FC = () => {
 
   return (
     <LibraryStorageContext.Provider value={storage}>
-      <AccountApp key={`${session.accountId ?? 'device'}:${session.revision}`} openDriveOnMount={session.openDrive} />
+      <AccountApp
+        key={`${session.accountId ?? 'device'}:${session.revision}`}
+        accountId={session.accountId}
+        openDriveOnMount={session.openDrive}
+      />
     </LibraryStorageContext.Provider>
   );
 };
 
-const AccountApp: React.FC<{ openDriveOnMount: boolean }> = ({ openDriveOnMount }) => {
+const AccountApp: React.FC<{ accountId: string | null; openDriveOnMount: boolean }> = ({ accountId, openDriveOnMount }) => {
   const storageService = useLibraryStorage();
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  const isCurrentLibrary = () => mounted.current && storageService.accountId === (googleDriveService.getUserProfile()?.sub ?? null);
+  // The library itself never changes with the account, but this mount still
+  // represents a specific account; reject stale work once the active Google
+  // profile no longer matches it, even before an unmount/remount occurs.
+  const isCurrentLibrary = () => mounted.current && accountId === (googleDriveService.getUserProfile()?.sub ?? null);
   const [activePage, setActivePage] = useState<'library' | 'viewer'>('library');
   const [activeFile, setActiveFile] = useState<ScoreFile | null>(null);
   const [inMemoryBlob, setInMemoryBlob] = useState<Blob | undefined>(undefined);
@@ -94,7 +107,7 @@ const AccountApp: React.FC<{ openDriveOnMount: boolean }> = ({ openDriveOnMount 
         const cachedBlob = await storageService.getFileData(targetId);
         if (!isCurrentLibrary()) return;
         if (!existing && targetId.startsWith('local-')) {
-          setImportError('This local score is not in the selected library on this device. Import the file or return to the device library.');
+          setImportError('This local score is not in your library on this device. Import the file to open it here.');
           return;
         }
 

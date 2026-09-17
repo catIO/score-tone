@@ -23,21 +23,20 @@ Google Drive is optional. One deployment uses one shared Google Cloud/OAuth proj
    * Save and manage custom user-defined presets.
 
 3. **Offline-First & Local Storage**
-   * Drag-and-drop or select PDF, MusicXML, or MXL files; local imports immediately save metadata and file blobs to the selected library in IndexedDB (using Dexie).
-   * Separate account libraries include score metadata, bookmarks, offline blobs, annotations, and custom presets.
-   * The original library remains the **Device library**; connecting an account does not move or assign existing scores to it.
+   * Drag-and-drop or select PDF, MusicXML, or MXL files; local imports immediately save metadata and file blobs to your single library in IndexedDB (using Dexie).
+   * The library includes score metadata, bookmarks, offline blobs, annotations, and custom presets, and is the same regardless of which Google account, if any, is connected.
    * Clear visual indicators showing whether a file is temporarily opened or fully cached offline.
    * Installable PWA shell with offline asset caching.
 
 4. **Selected-File Google Drive Import**
    * **Select scores with Google Picker** is the prominent action for authorizing new files. The native **Previously authorized scores** list searches only files accessible under `drive.file`, not the whole Drive.
-   * Requests `drive.file`, `openid`, `userinfo.email`, and `userinfo.profile`; Google's userinfo endpoint supplies the verified account `sub` used for library selection.
-   * Access tokens and expiry timestamps stay in memory only. Legacy token/expiry keys are removed from `localStorage`; there is no silent or background authentication.
-   * A saved display profile remembers the selected offline library across reloads, independently of an online token. Reconnect explicitly for private online files.
+   * Requests `drive.file`, `openid`, `userinfo.email`, and `userinfo.profile`; Google's userinfo endpoint supplies the verified account `sub` used to identify the connected account.
+   * Access tokens and expiry timestamps are kept in memory and in this browser tab's `sessionStorage`, never in `localStorage` or IndexedDB, so opening several files in the same tab doesn't require reconnecting each time. Legacy token/expiry keys are removed from `localStorage`; there is no silent or background authentication beyond reusing this tab's still-valid token.
+   * A saved display profile remembers the connected account across reloads, independently of an online token. Reconnect explicitly once the token expires.
    * Pasting a link does not grant access. Some publicly accessible files may also download through public Google endpoints without Picker authorization.
    * If Google services are unavailable, import a device file instead. Disabling Brave Shields is not required to use ScoreTone.
 
-Account libraries organize browser data; they are **not an authentication lock or app-level encryption**. Someone using the same OS/browser profile can access browser storage. See [docs/drive-import-and-account-libraries.md](docs/drive-import-and-account-libraries.md) for workflows, limitations, and pending public-launch checks.
+Your library is **not an authentication lock or app-level encryption**. Someone using the same OS/browser profile can access browser storage. See [docs/drive-import-and-account-libraries.md](docs/drive-import-and-account-libraries.md) for workflows, limitations, and pending public-launch checks.
 
 ## Settings
 
@@ -147,9 +146,9 @@ An API key identifies the app; it does not grant access to private files. For fa
 
 ## Architecture and Technical Design
 
-* [src/services/googleDriveService.ts](src/services/googleDriveService.ts): GIS OAuth, server userinfo verification, memory-only tokens, selected-file API access, and Picker lifecycle.
-* [src/services/storageService.ts](src/services/storageService.ts): Dexie databases for Device and account libraries.
-* [src/App.tsx](src/App.tsx) and [src/hooks/useLibraryStorage.ts](src/hooks/useLibraryStorage.ts): select the account's storage and remount the account UI on switches/disconnects.
+* [src/services/googleDriveService.ts](src/services/googleDriveService.ts): GIS OAuth, server userinfo verification, per-tab session tokens, selected-file API access, and Picker lifecycle.
+* [src/services/storageService.ts](src/services/storageService.ts): a single shared Dexie database for the whole library, independent of the connected Google account.
+* [src/App.tsx](src/App.tsx) and [src/hooks/useLibraryStorage.ts](src/hooks/useLibraryStorage.ts): provide that shared storage and remount the account UI on switches/disconnects.
 * [src/components/HeaderBar.tsx](src/components/HeaderBar.tsx): account display, reconnect, choose account, and disconnect actions.
 * [src/components/LibraryPage.tsx](src/components/LibraryPage.tsx) and [src/components/DriveFileBrowser.tsx](src/components/DriveFileBrowser.tsx): local imports, Picker entry point, previously authorized list, and link handling.
 * [src/services/settingsService.ts](src/services/settingsService.ts): device-wide display preferences in `localStorage`; these are distinct from account-scoped saved custom presets.
@@ -159,24 +158,24 @@ An API key identifies the app; it does not grant access to private files. For fa
 ## Core Workflows
 
 ### 1. Local File Loading
-1. Check the selected library shown below the library heading: **Device library** or the selected Google account's offline library.
+1. Your library is the same whether or not a Google account is connected, shown below the library heading.
 2. Use **Add Score → From this device** for a PDF, MusicXML (.xml or .musicxml), or MXL file. On mobile, find **Add Score** in the account menu. **Browse Files**, drag-and-drop, and Settings’ **Import from device** remain direct device imports.
-3. The app saves its metadata and blob immediately to that library with `offline: true`, then opens the viewer. Local import into an account library does not upload the file to Google Drive.
+3. The app saves its metadata and blob immediately to your library with `offline: true`, then opens the viewer. Local import does not upload the file to Google Drive.
 
 ### 2. Google Drive Loading
 1. Choose **Add Score → From Google Drive** on desktop or mobile, or use the direct Drive action in **Settings → Account & cloud**. Opening Add Score does not sign in. Selecting Drive reuses a usable in-memory token or explicitly asks you to sign in/reconnect. It verifies the returned account through Google's userinfo endpoint before accepting the online session. Cloud import requires internet access and configured Google integration; **From this device** works offline without an account and never uploads your file. For other cloud services, download the file first and choose **From this device**.
 2. Click **Select scores with Google Picker** to authorize a new file, or choose from **Previously authorized scores**. An empty native list is normal for a fresh account; it is not an inventory of the user's Drive.
-3. Selected files are opened from an existing local copy when available; otherwise the app downloads and caches them in the selected account library. Supported formats are PDF, MusicXML, and MXL.
+3. Selected files are opened from an existing local copy when available; otherwise the app downloads and caches them in your library. Supported formats are PDF, MusicXML, and MXL.
 4. A pasted Drive link checks access; it never grants permission. For a private file, use an account that has Drive access and authorize it with Picker. Public-link downloads are best-effort and may fail because of Google restrictions or browser/network behavior.
 5. A newly opened shared deep link can remain an in-memory preview until saved to the library. Copying a score/page/loop link shares a reference, not a file or access grant. A local score link requires that score to exist in the recipient's selected library on that browser/device.
 
 ### 3. Account Selection and Disconnect
-* Each verified Google `sub` selects its own Dexie database, containing files, bookmarks, blobs, annotations, and custom presets. The original `ScoreToneDatabase` remains the **Device library**, untouched by account assignment; no automatic migration or reassignment occurs.
-* The selected display profile persists for offline library selection after reload, even without a token. **Choose Google account** requires an explicit online Google flow and verifies the resulting `sub`; it is not an offline account chooser.
-* **Disconnect · use device library** clears the in-memory token and saved profile/login hint, hides the account library, and returns to Device library. Account copies remain saved and reappear when the same account is reconnected. Disconnecting neither revokes Google's grant nor deletes data.
-* To revoke Google access, use [Google account permissions](https://myaccount.google.com/permissions). To delete a score's local record, bookmarks, blob, and annotations, use the library trash action. Remove custom presets separately; clearing all site data removes all local libraries and preferences. Google revocation does not erase offline copies.
+* All Google accounts (and no account at all) share the same single Dexie database, containing files, bookmarks, blobs, annotations, and custom presets. Connecting, switching, or disconnecting a Google account never changes, hides, or reassigns this library.
+* The selected display profile persists across reload, even without a token. **Choose Google account** requires an explicit online Google flow and verifies the resulting `sub`; it is not an offline account chooser.
+* **Disconnect Google account** clears the token and saved profile/login hint. Your library, bookmarks, annotations, and custom presets are unaffected. Disconnecting neither revokes Google's grant nor deletes data.
+* To revoke Google access, use [Google account permissions](https://myaccount.google.com/permissions). To delete a score's local record, bookmarks, blob, and annotations, use the library trash action. Remove custom presets separately; clearing all site data removes your library and preferences. Google revocation does not erase offline copies.
 
 ### 4. PWA Offline Caching
 * **Static assets:** the service worker caches the app shell. Offline startup depends on assets having been cached successfully beforehand; first-ever offline visits are not supported.
-* **Scores:** saved document blobs live in IndexedDB, not a Drive synchronization service. Cached scores in the selected library can open without Google authentication. Browser eviction, private browsing, or clearing site data can remove local copies; retain original files elsewhere.
-* **Session expiry:** a three-minute buffer prevents reuse of near-expiry tokens. There is no proactive renewal or background OAuth. See [docs/proactive-token-refresh.md](docs/proactive-token-refresh.md) for the current explicit-reconnect policy that replaces the old silent-refresh proposal.
+* **Scores:** saved document blobs live in IndexedDB, not a Drive synchronization service. Cached scores in your library can open without Google authentication. Browser eviction, private browsing, or clearing site data can remove local copies; retain original files elsewhere.
+* **Session expiry:** a three-minute buffer prevents reuse of near-expiry tokens, and the token is kept in this tab's `sessionStorage` so a reload doesn't force a reconnect. There is no proactive renewal or background OAuth beyond reusing that still-valid token. See [docs/proactive-token-refresh.md](docs/proactive-token-refresh.md) for the current explicit-reconnect policy that replaces the old silent-refresh proposal.

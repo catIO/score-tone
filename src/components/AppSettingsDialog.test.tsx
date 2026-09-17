@@ -21,7 +21,7 @@ function createProps(overrides: Partial<AppSettingsDialogProps> = {}): AppSettin
         tab: 'general', onTabChange: vi.fn(), onClose: vi.fn(),
         settings: createSettings(), onSettingsChange: vi.fn(),
         profile: null, connected: false, configured: true, online: true,
-        onOpenDrive: vi.fn(), onChooseAccount: vi.fn(), onDriveLogout: vi.fn(), onAddScore: vi.fn(),
+        onOpenDrive: vi.fn(), onChooseAccount: vi.fn(), onDriveLogout: vi.fn(),
         ...overrides,
     };
 }
@@ -160,7 +160,7 @@ describe('AppSettingsDialog accessibility', () => {
         const first = screen.getByRole('button', { name: 'Close settings' });
         const last = tab === 'general'
             ? screen.getByRole('slider', { name: /Tap zone width/ })
-            : screen.getByRole('button', { name: 'Import from device' });
+            : screen.getByRole('link', { name: /Manage Google permissions/ });
         // jsdom does not implement native Tab navigation; exercise the explicit boundary trap.
         first.focus();
         expect(fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })).toBe(false);
@@ -199,12 +199,12 @@ describe('AppSettingsDialog accessibility', () => {
 
 describe('AppSettingsDialog Account & cloud', () => {
     it.each([
-        { name: 'disconnected', profile: null, connected: false, online: true, status: 'No account connected · Device library', action: 'Connect Google Drive' },
+        { name: 'disconnected', profile: null, connected: false, online: true, status: 'No account connected', action: 'Connect Google Drive' },
         { name: 'remembered', profile, connected: false, online: true, status: 'Account remembered · Drive reconnect required', action: 'Reconnect Google Drive' },
         { name: 'active', profile, connected: true, online: true, status: 'Google Drive connected', action: 'Import from Google Drive' },
         { name: 'offline remembered', profile, connected: false, online: false, status: 'Offline · Account remembered', action: 'Reconnect Google Drive' },
         { name: 'offline with cached token', profile, connected: true, online: false, status: 'Offline · Account remembered', action: 'Import from Google Drive' },
-        { name: 'offline device', profile: null, connected: false, online: false, status: 'Offline · Device library', action: 'Connect Google Drive' },
+        { name: 'offline device', profile: null, connected: false, online: false, status: 'Offline', action: 'Connect Google Drive' },
     ])('renders truthful $name status and corresponding cloud action', ({ name: _name, status, action, ...state }) => {
         const { props } = mount({ tab: 'account', ...state });
         expect(screen.getByRole('status').textContent).toBe(status);
@@ -225,23 +225,19 @@ describe('AppSettingsDialog Account & cloud', () => {
         if (!state.online) expect(screen.getByText(/You’re offline/)).toBeTruthy();
     });
 
-    it('disables cloud actions when this installation is not configured but permits device import', () => {
-        const { props } = mount({ tab: 'account', configured: false });
+    it('disables cloud actions when this installation is not configured', () => {
+        mount({ tab: 'account', configured: false });
         expect(screen.getByText('Google Drive is not configured for this installation.')).toBeTruthy();
         for (const name of ['Connect Google Drive', 'Choose Google account']) {
             const button = screen.getByRole('button', { name }) as HTMLButtonElement;
             expect(button.disabled).toBe(true);
             fireEvent.click(button);
         }
-        fireEvent.click(screen.getByRole('button', { name: 'Import from device' }));
-        expect(props.onAddScore).toHaveBeenCalledTimes(1);
-        expect(props.onOpenDrive).not.toHaveBeenCalled();
-        expect(props.onChooseAccount).not.toHaveBeenCalled();
     });
 
     it('disables missing cloud/disconnect handlers rather than presenting fake working actions', () => {
         mount({ tab: 'account', profile, onOpenDrive: undefined, onChooseAccount: undefined, onDriveLogout: undefined });
-        for (const name of ['Reconnect Google Drive', 'Choose Google account', 'Disconnect · use device library']) {
+        for (const name of ['Reconnect Google Drive', 'Choose Google account', 'Disconnect Google account']) {
             expect((screen.getByRole('button', { name }) as HTMLButtonElement).disabled).toBe(true);
         }
     });
@@ -271,33 +267,26 @@ describe('AppSettingsDialog Account & cloud', () => {
         expect(screen.queryByRole('alert')).toBeNull();
     });
 
-    it('keeps disconnect and device import available offline, unconfigured, and during cloud work', () => {
+    it('keeps disconnect available offline, unconfigured, and during cloud work', () => {
         const { props } = mount({ tab: 'account', profile, online: false, configured: false, cloudBusy: true });
-        const disconnect = screen.getByRole('button', { name: 'Disconnect · use device library' }) as HTMLButtonElement;
-        const local = screen.getByRole('button', { name: 'Import from device' }) as HTMLButtonElement;
+        const disconnect = screen.getByRole('button', { name: 'Disconnect Google account' }) as HTMLButtonElement;
         expect(disconnect.disabled).toBe(false);
-        expect(local.disabled).toBe(false);
         fireEvent.click(disconnect);
-        fireEvent.click(local);
         expect(props.onDriveLogout).toHaveBeenCalledTimes(1);
-        expect(props.onAddScore).toHaveBeenCalledTimes(1);
         expect(screen.getByText(/It does not delete scores or revoke Google access/)).toBeTruthy();
         expect(props.onOpenDrive).not.toHaveBeenCalled();
         expect(props.onChooseAccount).not.toHaveBeenCalled();
     });
 
-    it('does not invent unsupported provider connections and offers device import instead', () => {
-        const { props } = mount({ tab: 'account' });
+    it('does not invent unsupported provider connections', () => {
+        mount({ tab: 'account' });
         expect(screen.getByText(/Google Drive is the only supported cloud provider/)).toBeTruthy();
-        expect(screen.getByText(/Other cloud providers are not yet supported/)).toBeTruthy();
         expect(screen.queryByRole('button', { name: /dropbox|onedrive|icloud|add provider/i })).toBeNull();
         expect(within(screen.getByRole('tabpanel')).getAllByRole('button').map(button => button.textContent)).toEqual([
-            'Connect Google Drive', 'Choose Google account', 'Import from device',
+            'Connect Google Drive', 'Choose Google account',
         ]);
         const permissions = screen.getByRole('link', { name: /Manage Google permissions/ });
         expect(permissions.getAttribute('href')).toBe('https://myaccount.google.com/connections');
         expect(permissions.getAttribute('rel')).toContain('noopener');
-        fireEvent.click(screen.getByRole('button', { name: 'Import from device' }));
-        expect(props.onAddScore).toHaveBeenCalledTimes(1);
     });
 });

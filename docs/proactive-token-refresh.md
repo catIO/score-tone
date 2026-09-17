@@ -2,9 +2,15 @@
 
 Updated September 17, 2026 for `score-i94r`. This document **replaces the obsolete proactive/silent-refresh proposal**. Its existing filename is retained for old links; it is not an implementation plan for background authentication.
 
+> **Update (score-fsfg, September 17, 2026):** Access tokens are now also persisted to this browser tab's
+> `sessionStorage` (in addition to memory) so a page reload within the token's lifetime reuses it instead of forcing a
+> reconnect for every file. The token is still never written to `localStorage` or IndexedDB, is cleared when the tab or
+> browser closes, still expires on Google's normal schedule, and no refresh token is stored or silently renewed. The
+> "memory only, never persisted" wording below describes the prior behavior.
+
 ## Current policy
 
-**No silent or background OAuth is performed.** Google access tokens and their expiry timestamps exist only in JavaScript memory. They are not persisted in `localStorage`, `sessionStorage`, or IndexedDB, and are not restored after reload. No refresh token is stored.
+**No silent or background OAuth is performed.** Google access tokens and their expiry timestamps exist in JavaScript memory and this tab's `sessionStorage`. They are not persisted in `localStorage` or IndexedDB, and are not restored after the tab/browser closes or the token expires. No refresh token is stored.
 
 At startup and disconnect, the service removes the legacy `localStorage` keys `scoretone_google_token` and `scoretone_google_token_expires`. Do not restore these keys or reintroduce renewal timers.
 

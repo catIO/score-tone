@@ -355,7 +355,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               >
                 <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--md-outline-variant)' }}>
                   <p className="break-words text-sm font-semibold" style={{ color: 'var(--md-on-surface)' }}>
-                    {userProfile?.name || userProfile?.email || (driveToken ? 'Google account' : 'Device library')}
+                    {userProfile?.name || userProfile?.email || (driveToken ? 'Google account' : 'Not connected')}
                   </p>
                   <p role="status" className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--md-on-surface-variant)' }}>{connectionStatus}</p>
                 </div>
@@ -410,7 +410,6 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           onOpenDrive={onOpenDrive ? () => leaveSettings(onOpenDrive) : undefined}
           onChooseAccount={onChooseAccount}
           onDriveLogout={onDriveLogout}
-          onAddScore={() => leaveSettings(onAddScore)}
           stats={stats}
         />
       )}

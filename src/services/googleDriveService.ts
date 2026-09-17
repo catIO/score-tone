@@ -74,12 +74,24 @@ function readProfile(value: string | null): GoogleUserProfile | null {
   } catch { return null; }
 }
 
-// Only the selected account's display profile survives reloads, never credentials.
+// Only the selected account's display profile survives reloads, never credentials
+// in localStorage. The access token itself is kept in sessionStorage (cleared when
+// the tab/browser closes) so reopening files in the same tab session doesn't force
+// a reconnect every time; a stale/expired token is ignored below.
 try {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(EXPIRES_KEY);
   profile = readProfile(localStorage.getItem(USER_PROFILE_KEY));
   loginHint = profile?.email || localStorage.getItem(LOGIN_HINT_KEY);
+  const storedExpires = Number(sessionStorage.getItem(EXPIRES_KEY));
+  const storedToken = sessionStorage.getItem(TOKEN_KEY);
+  if (storedToken && Number.isFinite(storedExpires) && storedExpires > Date.now()) {
+    accessToken = storedToken;
+    tokenExpiresAt = storedExpires;
+  } else {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(EXPIRES_KEY);
+  }
 } catch { /* Storage may be unavailable; auth still works in memory. */ }
 
 export function getSessionRevision(): number { return sessionRevision; }
@@ -88,11 +100,24 @@ function isTokenExpiringSoon(bufferMs = 3 * 60 * 1000): boolean {
   return !tokenExpiresAt || Date.now() >= tokenExpiresAt - bufferMs;
 }
 
+function persistToken(): void {
+  try {
+    if (accessToken && tokenExpiresAt) {
+      sessionStorage.setItem(TOKEN_KEY, accessToken);
+      sessionStorage.setItem(EXPIRES_KEY, String(tokenExpiresAt));
+    } else {
+      sessionStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(EXPIRES_KEY);
+    }
+  } catch { /* This tab keeps working from memory even if storage is unavailable. */ }
+}
+
 function clearStoredToken(failedToken?: string | null): void {
   // A late 401 from an old request must not clear a newer account's token.
   if (failedToken && failedToken !== accessToken) return;
   accessToken = null;
   tokenExpiresAt = null;
+  persistToken();
   window.dispatchEvent(new Event(GOOGLE_CONNECTION_CHANGED_EVENT));
 }
 
@@ -305,6 +330,7 @@ export const googleDriveService = {
                 accessToken = response.access_token;
                 tokenExpiresAt = expiresAt;
                 persistProfile();
+                persistToken();
                 // Complete auth before notifying listeners. The first connection is not
                 // cancellation: consumers should let its pending library action finish.
                 if (previousAccountId !== profile.sub) sessionRevision++;
@@ -507,8 +533,8 @@ export const googleDriveService = {
     loginHint = null;
     persistProfile();
     try {
-      localStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(EXPIRES_KEY);
+      sessionStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(EXPIRES_KEY);
       // Notify other tabs even when no profile was persisted in this tab.
       localStorage.setItem(SESSION_EVENT_KEY, crypto.randomUUID());
     } catch { /* Local logout always succeeds, even without storage. */ }

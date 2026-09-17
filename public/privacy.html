@@ -121,29 +121,29 @@
               </p>
               <p>
                 <strong>Offline Data Retention:</strong> Local imports and scores imported through the Drive library
-                dialog save metadata and file blobs in the currently selected library's IndexedDB database. Account
-                libraries are separate databases keyed by Google account identifier and include files, bookmarks,
-                offline blobs, annotations, and custom presets. A newly opened shared link may remain an in-memory
-                preview until saved. The original <code class="text-[#FFB74D]">ScoreToneDatabase</code> remains the
-                "Device library," including older saved scores; connecting an account does not automatically reassign or
-                migrate it. Local imports while an account library is selected save there, not automatically in Device
-                library, and are not uploaded to Google Drive.
+                dialog save metadata and file blobs in a single shared IndexedDB database
+                (<code class="text-[#FFB74D]">ScoreToneDatabase</code>) that includes files, bookmarks, offline blobs,
+                annotations, and custom presets. This library is the same regardless of which Google account, if any,
+                is connected; connecting or switching a Google account never changes, hides, or reassigns its contents.
+                A newly opened shared link may remain an in-memory preview until saved.
               </p>
               <p>
                 <strong>Saved Profile and Login Hint:</strong> The selected account's identifier and available display
                 profile are saved in your browser's <code class="text-[#FFB74D]">localStorage</code>, along with a login
-                hint for a later explicit reconnect. This remembers the selected offline library after reload, even when
+                hint for a later explicit reconnect. This remembers the connected account after reload, even when
                 offline or without a live Google session. The hint may be sent to Google when you explicitly reconnect.
                 Restoring this profile is not fresh identity verification. Choosing another Google account requires an
                 explicit online flow and verification through Google's userinfo endpoint.
               </p>
               <p>
-                <strong>OAuth Tokens:</strong> Access tokens and expiry timestamps are held only in JavaScript memory,
-                not in <code class="text-[#FFB74D]">localStorage</code>, <code
-                  class="text-[#FFB74D]">sessionStorage</code>, or IndexedDB. Reloading the page loses the token. Legacy
-                localStorage token and expiry keys are removed at startup and disconnect. Score Tone stores no refresh
-                token and performs no silent or background authentication. Reconnect explicitly when online access is
-                needed; saved offline copies do not require a live token. Preloading Google's sign-in script is not an
+                <strong>OAuth Tokens:</strong> Access tokens and expiry timestamps are held in JavaScript memory and in
+                this browser tab's <code class="text-[#FFB74D]">sessionStorage</code>, never in
+                <code class="text-[#FFB74D]">localStorage</code> or IndexedDB. This lets the same tab reuse a valid
+                token after a reload without reconnecting for every file, but the token is cleared when the tab or
+                browser closes and still expires on Google's normal schedule. Legacy localStorage token and expiry keys
+                are removed at startup and disconnect. Score Tone stores no refresh token and performs no silent or
+                background authentication beyond reusing this tab's still-valid token. Reconnect explicitly once it
+                expires; saved offline copies do not require a live token. Preloading Google's sign-in script is not an
                 authentication request.
               </p>
               <p>
@@ -176,7 +176,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span><strong>No Score Tone Account Required:</strong> Local PDF, MusicXML, and MXL import requires no
-              registration. Connecting Google is optional and enables selected-file import and an account-specific local
+              registration. Connecting Google is optional and enables selected-file import into your single local
               library. If Google services are unavailable, use device-file import; disabling Brave Shields is not
               required to use Score Tone.</span>
           </li>
@@ -185,10 +185,11 @@
               stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span><strong>Browser Storage:</strong> Libraries are stored in IndexedDB; the selected profile, login hint,
-              and general preferences use localStorage. General display settings, theme, and library view preference
-              remain device-wide, unlike account-scoped saved custom presets. The service worker caches app assets for
-              offline use. Browser storage is not a cloud backup.</span>
+            <span><strong>Browser Storage:</strong> Your library is stored in a single IndexedDB database; the
+              connected profile, login hint, and general preferences use localStorage, and the Drive access token for
+              this tab session uses sessionStorage. General display settings, theme, library view preference, and
+              custom presets are all device-wide, not scoped to any Google account. The service worker caches app
+              assets for offline use. Browser storage is not a cloud backup.</span>
           </li>
           <li class="flex items-start">
             <svg class="h-5 w-5 text-[#FFB74D] mr-3 mt-1 flex-shrink-0" fill="none" viewBox="0 0 24 24"
@@ -219,10 +220,10 @@
           address and browser information under those providers' policies.
         </p>
         <p class="text-[#CEC5B8] mb-4 leading-relaxed">
-          <strong>Disconnect:</strong> "Disconnect · use device library" clears the in-memory token and saved
-          profile/login hint, hides that account's library, and returns to Device library. It does not delete account
-          copies, bookmarks, annotations, or custom presets, and it does not revoke Google's permission grant.
-          Reconnecting the same verified account shows its retained library again.
+          <strong>Disconnect:</strong> "Disconnect Google account" clears the token and saved profile/login hint for
+          that account. It does not delete your library, bookmarks, annotations, or custom presets, and it does not
+          revoke Google's permission grant; your library looks exactly the same whether or not a Google account is
+          connected.
         </p>
         <p class="text-[#CEC5B8] mb-4 leading-relaxed">
           <strong>Revoke:</strong> To revoke Google's grant, remove Score Tone from <a
@@ -231,10 +232,9 @@
           offline copies or local profile data; disconnect and delete local data separately as needed.
         </p>
         <p class="text-[#CEC5B8] mb-4 leading-relaxed">
-          <strong>Delete Local Scores:</strong> Use the trash action in the selected library to delete a score's
-          metadata, bookmarks, blob, and annotations from that library. Other account libraries and Google Drive
-          originals are unaffected. Removing only an offline copy retains metadata; remove saved custom presets
-          separately. To delete a hidden account's scores through the app, reconnect that account first.
+          <strong>Delete Local Scores:</strong> Use the trash action in your library to delete a score's
+          metadata, bookmarks, blob, and annotations. Google Drive originals are unaffected. Removing only an offline
+          copy retains metadata; remove saved custom presets separately.
         </p>
         <p class="text-[#CEC5B8] leading-relaxed">
           <strong>Delete All Local App Data:</strong> Close other Score Tone tabs and clear this site's browser data,

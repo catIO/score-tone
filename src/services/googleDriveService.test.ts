@@ -113,18 +113,29 @@ describe('explicit OAuth and memory-only credentials', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('persists display profile only and loses credentials on module reload', async () => {
-        const writes = vi.spyOn(Storage.prototype, 'setItem');
+    it('persists the display profile and this tab\'s token, restoring the token on module reload', async () => {
         await connect();
         expect(service.getCachedToken()).toBe('token-a');
         expect(JSON.parse(localStorage.getItem(PROFILE_KEY)!)).toEqual(account);
-        expect(writes.mock.calls.some(([key]) => [TOKEN_KEY, EXPIRES_KEY].includes(key))).toBe(false);
-        expect(JSON.stringify(writes.mock.calls)).not.toContain('token-a');
-        expect(sessionStorage.length).toBe(0);
+        // Credentials are kept in sessionStorage (cleared when the tab closes), never localStorage.
+        expect(localStorage.getItem(TOKEN_KEY)).toBeNull();
+        expect(localStorage.getItem(EXPIRES_KEY)).toBeNull();
+        expect(sessionStorage.getItem(TOKEN_KEY)).toBe('token-a');
+        expect(sessionStorage.getItem(EXPIRES_KEY)).toEqual(expect.any(String));
+        await importService();
+        expect(service.getCachedToken()).toBe('token-a');
+        expect(service.getUserProfile()).toEqual(account);
+        // Reload must not trigger a new interactive auth flow beyond the initial connect above.
+        expect(initTokenClient).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not restore an expired token from a previous tab session on module reload', async () => {
+        await connect();
+        await vi.advanceTimersByTimeAsync(3_600_001);
         await importService();
         expect(service.getCachedToken()).toBeNull();
         expect(service.getUserProfile()).toEqual(account);
-        expect(initTokenClient).toHaveBeenCalledTimes(1);
+        expect(sessionStorage.getItem(TOKEN_KEY)).toBeNull();
     });
 
     it('never opens a popup for noninteractive access or silentRefresh', async () => {

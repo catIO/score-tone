@@ -40,6 +40,13 @@ vi.mock('./services/googleDriveService', () => ({
     },
 }));
 
+// The identity shown in these mocks tracks the connected Google profile, not
+// the storage object: storage is a single shared library that never changes,
+// while the profile still distinguishes one AccountApp mount/remount from another.
+function currentIdentity(): string | null {
+    return googleDriveService.getUserProfile()?.sub ?? null;
+}
+
 vi.mock('./components/LibraryPage', () => ({
     default: function MockLibraryPage({ onOpenFile, openDriveOnMount = false }: LibraryProps) {
         const storage = useLibraryStorage();
@@ -58,12 +65,12 @@ vi.mock('./components/LibraryPage', () => ({
         }, []);
         return (
             <section aria-label="Library">
-                <output data-testid="library-account">{storage.accountId ?? 'device'}</output>
+                <output data-testid="library-account">{currentIdentity() ?? 'device'}</output>
                 {files === null ? <p>Loading library</p> : <p>Library ready</p>}
                 {files?.map(file => (
                     <button key={file.id} onClick={() => onOpenFile(file)}>Open {file.name}</button>
                 ))}
-                {showDrive && <div role="dialog" aria-label="Drive browser">{storage.accountId}</div>}
+                {showDrive && <div role="dialog" aria-label="Drive browser">{currentIdentity()}</div>}
             </section>
         );
     },
@@ -73,13 +80,14 @@ vi.mock('./components/ViewerPage', () => ({
     default: function MockViewerPage({ file, inMemoryBlob, onBack, onPagePermalink }: ViewerProps) {
         const storage = useLibraryStorage();
         const [page, setPage] = useState(file.lastPage);
+        const identity = currentIdentity();
         useEffect(() => {
             mocks.stores.add(storage);
-            return () => { mocks.viewerUnmounted(storage.accountId); };
+            return () => { mocks.viewerUnmounted(identity); };
         }, []);
         return (
             <section aria-label="Viewer">
-                <output data-testid="viewer-account">{storage.accountId ?? 'device'}</output>
+                <output data-testid="viewer-account">{identity ?? 'device'}</output>
                 <p>{file.name}</p>
                 <output data-testid="viewer-page">{page}</output>
                 <output data-testid="viewer-blob-size">{inMemoryBlob?.size ?? 'none'}</output>
@@ -96,27 +104,29 @@ vi.mock('./components/ViewerPage', () => ({
 vi.mock('./components/UpdatePrompt', () => ({
     default: function MockUpdatePrompt() {
         const storage = useLibraryStorage();
+        const identity = currentIdentity();
         // This child stays mounted across library/viewer navigation, so its
         // lifecycle distinguishes an AccountApp remount from a page change.
         useEffect(() => {
             mocks.stores.add(storage);
-            mocks.treeMounted(storage.accountId);
-            return () => { mocks.treeUnmounted(storage.accountId); };
+            mocks.treeMounted(identity);
+            return () => { mocks.treeUnmounted(identity); };
         }, []);
-        return <output data-testid="account-tree">{storage.accountId ?? 'device'}</output>;
+        return <output data-testid="account-tree">{identity ?? 'device'}</output>;
     },
 }));
 
 const drive = vi.mocked(googleDriveService);
-const score = (name: string): ScoreFile => ({
-    // Identical IDs in every library catch accidental cross-account URL replay.
-    id: 'shared-drive-id', name, source: 'google-drive', offline: true,
+const score = (name: string, id = 'shared-drive-id'): ScoreFile => ({
+    id, name, source: 'google-drive', offline: true,
     lastOpened: 1, lastPage: 3,
     bookmarks: [{ id: 'practice', name: 'Practice', page: 3, createdAt: 1 }],
 });
 
-async function seed(accountId: string | null, name: string) {
-    const storage = createStorageService(accountId);
+// The app always reads/writes the single device library, regardless of which
+// Google account (if any) is connected, so tests seed that one library directly.
+async function seed(name: string) {
+    const storage = createStorageService(null);
     mocks.stores.add(storage);
     const file = score(name);
     await storage.cacheFileOffline(file, new Blob([name]));
@@ -143,9 +153,9 @@ function accountChange(accountId: string | null, reason: GoogleAccountChangedDet
     });
 }
 
-async function expectLibrary(accountId: string | null, name: string) {
+async function expectLibrary(identity: string | null, name: string) {
     await screen.findByRole('button', { name: `Open ${name}` });
-    expect(screen.getByTestId('library-account').textContent).toBe(accountId ?? 'device');
+    expect(screen.getByTestId('library-account').textContent).toBe(identity ?? 'device');
     expect(screen.queryByRole('region', { name: 'Viewer' })).toBeNull();
 }
 
@@ -191,19 +201,17 @@ afterEach(async () => {
     document.documentElement.classList.remove('dark');
 });
 
-describe('App account-bound context and remounts', () => {
-    it('restores the selected offline library from a profile without a token or email', async () => {
-        await seed(null, 'Device score');
-        await seed('account-a', 'Account A score');
+describe('App single shared library across account changes', () => {
+    it('shows the library from a remembered profile without a token or email', async () => {
+        await seed('Library score');
         mocks.profile = { sub: 'account-a' };
 
         render(<App />);
 
-        await expectLibrary('account-a', 'Account A score');
-        expect(screen.queryByRole('button', { name: 'Open Device score' })).toBeNull();
+        await expectLibrary('account-a', 'Library score');
         expect(latestLibrary().openDriveOnMount).toBe(false);
         expect(screen.queryByRole('dialog')).toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: 'Open Account A score' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
         expect(screen.getByTestId('viewer-account').textContent).toBe('account-a');
         expect(mocks.token).toBeNull();
         expect(drive.getAccessToken).not.toHaveBeenCalled();
@@ -211,9 +219,8 @@ describe('App account-bound context and remounts', () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 
-    it('opens a cached deep link from the restored account rather than the device library', async () => {
-        await seed(null, 'Device score');
-        const { file } = await seed('account-a', 'Account A score');
+    it('opens a cached deep link regardless of the connected account', async () => {
+        const { file } = await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         window.history.replaceState({}, '', `/scores?view=${file.id}&page=7`);
 
@@ -229,97 +236,86 @@ describe('App account-bound context and remounts', () => {
         expect(drive.downloadFile).not.toHaveBeenCalled();
     });
 
-    it('opens Drive on the first connected account tree with newly bound storage', async () => {
-        await seed(null, 'Device score');
-        await seed('account-a', 'Account A score');
+    it('opens Drive on the first connected account without swapping the library storage', async () => {
+        await seed('Library score');
         render(<App />);
-        await expectLibrary(null, 'Device score');
+        await expectLibrary(null, 'Library score');
         const deviceMount = latestLibrary();
         const oldTree = screen.getByTestId('account-tree');
         expect(screen.queryByRole('dialog')).toBeNull();
 
         accountChange('account-a', 'connected');
 
-        await expectLibrary('account-a', 'Account A score');
+        await expectLibrary('account-a', 'Library score');
         expect(screen.getByRole('dialog', { name: 'Drive browser' }).textContent).toBe('account-a');
         expect(latestLibrary().openDriveOnMount).toBe(true);
-        expect(latestLibrary().storage.accountId).toBe('account-a');
-        expect(latestLibrary().storage).not.toBe(deviceMount.storage);
-        expect(deviceMount.storage.accountId).toBeNull();
+        // The same storage instance backs the library before and after connecting.
+        expect(latestLibrary().storage).toBe(deviceMount.storage);
         expect(screen.getByTestId('account-tree')).not.toBe(oldTree);
         expect(mocks.treeUnmounted).toHaveBeenCalledWith(null);
         expect(mocks.treeMounted.mock.calls).toEqual([[null], ['account-a']]);
-        expect(screen.queryByRole('button', { name: 'Open Device score' })).toBeNull();
     });
 
-    it('remounts on account switch, clearing the active viewer and current history entry', async () => {
-        await seed('account-a', 'Account A score');
-        await seed('account-b', 'Account B score');
+    it('remounts UI state on account switch but keeps the same library contents', async () => {
+        await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         render(<App />);
-        await expectLibrary('account-a', 'Account A score');
+        await expectLibrary('account-a', 'Library score');
         const oldStorage = latestLibrary().storage;
         const oldTree = screen.getByTestId('account-tree');
-        fireEvent.click(screen.getByRole('button', { name: 'Open Account A score' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
         expect(window.location.search).toBe('?view=shared-drive-id&page=3');
         window.history.replaceState(window.history.state, '', `${window.location.href}#old-score`);
         const historyLength = window.history.length;
 
         accountChange('account-b', 'account-changed');
 
-        await expectLibrary('account-b', 'Account B score');
+        await expectLibrary('account-b', 'Library score');
         expectCleanLocation();
         expect(window.history.length).toBe(historyLength);
-        expect(screen.queryByText('Account A score')).toBeNull();
         expect(screen.getByTestId('account-tree')).not.toBe(oldTree);
         expect(mocks.viewerUnmounted.mock.calls).toEqual([['account-a']]);
         expect(mocks.treeUnmounted.mock.calls).toEqual([['account-a']]);
-        expect(latestLibrary().storage).not.toBe(oldStorage);
-        expect(oldStorage.accountId).toBe('account-a');
+        // The library itself never changes, even though the tree remounted.
+        expect(latestLibrary().storage).toBe(oldStorage);
         expect(latestLibrary().openDriveOnMount).toBe(true);
         expect(screen.getByRole('dialog').textContent).toBe('account-b');
         expect(drive.downloadFile).not.toHaveBeenCalled();
     });
 
-    it.each(['logout', 'storage'] as const)('%s with a null profile returns to device and preserves both libraries', async reason => {
-        const device = await seed(null, 'Device score');
-        const account = await seed('account-a', 'Account A score');
+    it.each(['logout', 'storage'] as const)('%s returns to the device identity and keeps the library intact', async reason => {
+        const { storage, file } = await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         render(<App />);
-        await expectLibrary('account-a', 'Account A score');
-        fireEvent.click(screen.getByRole('button', { name: 'Open Account A score' }));
+        await expectLibrary('account-a', 'Library score');
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
 
         accountChange(null, reason);
 
-        await expectLibrary(null, 'Device score');
+        await expectLibrary(null, 'Library score');
         expectCleanLocation();
-        expect(screen.queryByText('Account A score')).toBeNull();
         expect(screen.queryByRole('dialog')).toBeNull();
         expect(latestLibrary().openDriveOnMount).toBe(false);
         expect(mocks.treeUnmounted.mock.calls).toEqual([['account-a']]);
         expect(mocks.viewerUnmounted.mock.calls).toEqual([['account-a']]);
-        for (const { storage, file } of [device, account]) {
-            expect(await storage.getFiles()).toEqual([file]);
-            expect(await (await storage.getFileData(file.id))?.text()).toBe(file.name);
-        }
+        expect(await storage.getFiles()).toEqual([file]);
+        expect(await (await storage.getFileData(file.id))?.text()).toBe(file.name);
 
         accountChange('account-a', 'connected');
-        await expectLibrary('account-a', 'Account A score');
-        expect(screen.queryByRole('button', { name: 'Open Device score' })).toBeNull();
+        await expectLibrary('account-a', 'Library score');
         expectCleanLocation();
     });
 
-    it('selects a non-null cross-tab profile without reopening Drive or replaying the old score', async () => {
-        await seed('account-a', 'Account A score');
-        await seed('account-b', 'Account B score');
+    it('selects a non-null cross-tab profile without reopening Drive or losing the library', async () => {
+        await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         render(<App />);
-        await expectLibrary('account-a', 'Account A score');
-        fireEvent.click(screen.getByRole('button', { name: 'Open Account A score' }));
+        await expectLibrary('account-a', 'Library score');
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
 
         accountChange('account-b', 'storage');
 
-        await expectLibrary('account-b', 'Account B score');
+        await expectLibrary('account-b', 'Library score');
         expectCleanLocation();
         expect(latestLibrary().openDriveOnMount).toBe(false);
         expect(screen.queryByRole('dialog')).toBeNull();
@@ -328,13 +324,13 @@ describe('App account-bound context and remounts', () => {
         expect(drive.getAccessToken).not.toHaveBeenCalled();
     });
 
-    it('keeps the same-account viewer, local state, storage and history on reconnection', async () => {
-        await seed('account-a', 'Account A score');
+    it('keeps the same viewer, local state, storage and history on reconnection', async () => {
+        await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         render(<App />);
-        await expectLibrary('account-a', 'Account A score');
+        await expectLibrary('account-a', 'Library score');
         const originalStorage = latestLibrary().storage;
-        fireEvent.click(screen.getByRole('button', { name: 'Open Account A score' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
         fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
         const viewer = screen.getByRole('region', { name: 'Viewer' });
         const tree = screen.getByTestId('account-tree');
@@ -357,34 +353,31 @@ describe('App account-bound context and remounts', () => {
         expect(mocks.treeUnmounted).not.toHaveBeenCalled();
         expect(mocks.viewerUnmounted).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Back to library' }));
-        await expectLibrary('account-a', 'Account A score');
+        await expectLibrary('account-a', 'Library score');
         expect(latestLibrary().storage).toBe(originalStorage);
     });
 
     it.each([
-        { accountId: 'account-b', reason: 'account-changed' as const, name: 'Account B score' },
-        { accountId: 'account-a', reason: 'storage' as const, name: 'Account A score' },
-    ])('rejects an old onOpenFile after $reason remount to $accountId', async ({ accountId, reason, name }) => {
-        await seed('account-a', 'Account A score');
-        await seed('account-b', 'Account B score');
+        { accountId: 'account-b', reason: 'account-changed' as const },
+        { accountId: 'account-a', reason: 'storage' as const },
+    ])('rejects an old onOpenFile after $reason remount to $accountId', async ({ accountId, reason }) => {
+        await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         render(<App />);
-        await expectLibrary('account-a', 'Account A score');
+        await expectLibrary('account-a', 'Library score');
         const oldMount = latestLibrary();
         const oldTree = screen.getByTestId('account-tree');
-        fireEvent.click(screen.getByRole('button', { name: 'Open Account A score' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
 
         accountChange(accountId, reason);
 
-        await expectLibrary(accountId, name);
+        await expectLibrary(accountId, 'Library score');
         expect(screen.getByTestId('account-tree')).not.toBe(oldTree);
         expect(mocks.treeUnmounted.mock.calls).toEqual([['account-a']]);
-        if (accountId === 'account-a') {
-            // The revision must remount AccountApp even though the storage object
-            // and profile are unchanged; only the old mounted guard rejects this.
-            expect(latestLibrary().storage).toBe(oldMount.storage);
-        }
-        fireEvent.click(screen.getByRole('button', { name: `Open ${name}` }));
+        // The revision must remount AccountApp even though the storage object
+        // and profile are unchanged; only the old mounted guard rejects this.
+        expect(latestLibrary().storage).toBe(oldMount.storage);
+        fireEvent.click(screen.getByRole('button', { name: 'Open Library score' }));
         const viewer = screen.getByRole('region', { name: 'Viewer' });
         const href = window.location.href;
         const historyState = window.history.state;
@@ -393,11 +386,11 @@ describe('App account-bound context and remounts', () => {
         const replace = vi.spyOn(window.history, 'replaceState');
 
         act(() => oldMount.onOpenFile(
-            { ...score('Stale score'), id: 'stale-score' }, new Blob(['stale']), 9, { loop: 'old' },
+            { ...score('Stale score', 'stale-score'), id: 'stale-score' }, new Blob(['stale']), 9, { loop: 'old' },
         ));
 
         expect(screen.getByRole('region', { name: 'Viewer' })).toBe(viewer);
-        expect(screen.getByText(name)).toBeTruthy();
+        expect(screen.getByText('Library score')).toBeTruthy();
         expect(screen.queryByText('Stale score')).toBeNull();
         expect(screen.getByTestId('viewer-account').textContent).toBe(accountId);
         expect(window.location.href).toBe(href);
@@ -408,10 +401,10 @@ describe('App account-bound context and remounts', () => {
     });
 
     it('rejects a mounted old callback when the profile changes before the event is delivered', async () => {
-        await seed('account-a', 'Account A score');
+        await seed('Library score');
         mocks.profile = { sub: 'account-a' };
         render(<App />);
-        await expectLibrary('account-a', 'Account A score');
+        await expectLibrary('account-a', 'Library score');
         const onOpenFile = latestLibrary().onOpenFile;
         const push = vi.spyOn(window.history, 'pushState');
 

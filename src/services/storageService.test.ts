@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { Blob as NodeBlob } from 'node:buffer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStorageService, type LibraryStorage, type ScoreFile, type AnnotationStroke } from './storageService';
+import { createStorageService, migrateLegacyAccountLibraries, type LibraryStorage, type ScoreFile, type AnnotationStroke } from './storageService';
 import { createAnnotationService } from './annotationService';
 
 const opened: LibraryStorage[] = [];
@@ -87,5 +87,54 @@ describe('account-bound offline libraries', () => {
         await a.removeFileFromOffline('same-drive-id');
         expect(await a.getFileData('same-drive-id')).toBeNull();
         expect((await a.getFiles())[0].bookmarks).toEqual(score().bookmarks);
+    });
+});
+
+describe('migrateLegacyAccountLibraries', () => {
+    afterEach(() => localStorage.clear());
+
+    it('folds an existing per-account library into the device library once, keeping device-only files', async () => {
+        const device = library(null);
+        await device.cacheFileOffline(score('Device only'), new Blob(['device']));
+        const account = library('google-sub-a');
+        await account.cacheFileOffline({ ...score('From account'), id: 'account-only-id' }, new Blob(['account']));
+        account.db.close();
+
+        await migrateLegacyAccountLibraries(device.db);
+
+        const files = await device.getFiles();
+        expect(files.map(f => f.name).sort()).toEqual(['Device only', 'From account']);
+        expect(await (await device.getFileData('account-only-id'))?.text()).toBe('account');
+    });
+
+    it('does not overwrite a device file that already exists under the same id', async () => {
+        const device = library(null);
+        await device.cacheFileOffline(score('Kept device version'), new Blob(['device']));
+        const account = library('google-sub-a');
+        await account.cacheFileOffline(score('Account version'), new Blob(['account']));
+        account.db.close();
+
+        await migrateLegacyAccountLibraries(device.db);
+
+        expect((await device.getFiles())[0].name).toBe('Kept device version');
+    });
+
+    it('only migrates once per device, even if called again', async () => {
+        const device = library(null);
+        const account = library('google-sub-a');
+        await account.cacheFileOffline({ ...score('From account'), id: 'account-a-id' }, new Blob(['account']));
+        account.db.close();
+
+        await migrateLegacyAccountLibraries(device.db);
+        expect(await device.getFiles()).toHaveLength(1);
+
+        // A second per-account database created after migration must not reappear
+        // automatically; the migration flag makes this a one-time operation.
+        const another = library('google-sub-b');
+        await another.cacheFileOffline({ ...score('Should stay put'), id: 'account-b-id' }, new Blob(['b']));
+        another.db.close();
+
+        await migrateLegacyAccountLibraries(device.db);
+        expect(await device.getFiles()).toHaveLength(1);
     });
 });

@@ -67,6 +67,12 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const [zoom, setZoom] = useState<number>(() => file.zoom ?? 1.0);
   const [scrollToLoopTrigger, setScrollToLoopTrigger] = useState<number>(0);
 
+  // Score-specific display overrides — fall back to the general default when this score has none.
+  const [fitMode, setFitMode] = useState<AppSettings['fitMode']>(() => file.fitMode ?? appSettings.fitMode);
+  const [scrollMode, setScrollMode] = useState<AppSettings['scrollMode']>(() => file.scrollMode ?? appSettings.scrollMode);
+  const [twoPageLandscape, setTwoPageLandscape] = useState<boolean>(() => file.twoPageLandscape ?? appSettings.twoPageLandscape);
+  const [showRightHandFingering, setShowRightHandFingering] = useState<boolean>(() => file.showRightHandFingering ?? appSettings.showRightHandFingering);
+
   const [isSavedInLibrary, setIsSavedInLibrary] = useState<boolean>(Boolean(file.offline));
   const [savingToLibrary, setSavingToLibrary] = useState<boolean>(false);
   const [saveSuccessToast, setSaveSuccessToast] = useState<boolean>(false);
@@ -127,10 +133,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   // Load annotations for visible pages
   useEffect(() => {
     loadPageStrokes(currentPage);
-    if (appSettings.twoPageLandscape) {
+    if (twoPageLandscape) {
       loadPageStrokes(currentPage + 1);
     }
-  }, [currentPage, loadPageStrokes, appSettings.twoPageLandscape]);
+  }, [currentPage, loadPageStrokes, twoPageLandscape]);
 
   const handleToggleAnnotate = useCallback(() => {
     setIsAnnotating(prev => {
@@ -197,6 +203,28 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }, 600);
     return () => window.clearTimeout(timer);
   }, [zoom, file]);
+
+  // Sync score-specific display overrides when active score changes
+  useEffect(() => {
+    setFitMode(file.fitMode ?? appSettings.fitMode);
+    setScrollMode(file.scrollMode ?? appSettings.scrollMode);
+    setTwoPageLandscape(file.twoPageLandscape ?? appSettings.twoPageLandscape);
+    setShowRightHandFingering(file.showRightHandFingering ?? appSettings.showRightHandFingering);
+  }, [file.id]);
+
+  // Persist score-specific display overrides (debounced), independent of the general defaults
+  useEffect(() => {
+    if (file.fitMode === fitMode && file.scrollMode === scrollMode &&
+      file.twoPageLandscape === twoPageLandscape && file.showRightHandFingering === showRightHandFingering) return;
+    const timer = window.setTimeout(() => {
+      file.fitMode = fitMode;
+      file.scrollMode = scrollMode;
+      file.twoPageLandscape = twoPageLandscape;
+      file.showRightHandFingering = showRightHandFingering;
+      storageService.saveFileMetadata({ ...file, fitMode, scrollMode, twoPageLandscape, showRightHandFingering }).catch(() => { });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [fitMode, scrollMode, twoPageLandscape, showRightHandFingering, file]);
 
   // Update browser tab title
   useEffect(() => {
@@ -530,7 +558,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       }
 
       const isLandscape = containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : false;
-      const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
+      const step = (twoPageLandscape && isLandscape) ? 2 : 1;
 
       const isPageTurnKey = [
         'ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter',
@@ -574,7 +602,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMusicXml, handleTogglePlay, handleRewind, currentPage, totalPages, appSettings.twoPageLandscape, zoomIn, zoomOut, zoomReset, zoom]);
+  }, [isMusicXml, handleTogglePlay, handleRewind, currentPage, totalPages, twoPageLandscape, zoomIn, zoomOut, zoomReset, zoom]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -619,7 +647,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         const dy = e.changedTouches[0].clientY - y;
         if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - t < 400) {
           const isLandscape = el.offsetWidth > el.offsetHeight;
-          const step = (appSettings.twoPageLandscape && isLandscape) ? 2 : 1;
+          const step = (twoPageLandscape && isLandscape) ? 2 : 1;
           handlePageChange(dx < 0
             ? Math.min(totalPages, currentPage + step)
             : Math.max(1, currentPage - step));
@@ -638,7 +666,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
     };
-  }, [currentPage, totalPages, appSettings.twoPageLandscape]);
+  }, [currentPage, totalPages, twoPageLandscape]);
 
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
@@ -791,7 +819,18 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   };
 
   const handleSettingsChangeLocal = (newSettings: AppSettings) => {
-    onSettingsChange(newSettings);
+    // These four fields are saved on this score instead of changing the shared general default.
+    setFitMode(newSettings.fitMode);
+    setScrollMode(newSettings.scrollMode);
+    setTwoPageLandscape(newSettings.twoPageLandscape);
+    setShowRightHandFingering(newSettings.showRightHandFingering);
+    onSettingsChange({
+      ...newSettings,
+      fitMode: appSettings.fitMode,
+      scrollMode: appSettings.scrollMode,
+      twoPageLandscape: appSettings.twoPageLandscape,
+      showRightHandFingering: appSettings.showRightHandFingering,
+    });
   };
 
 
@@ -1064,7 +1103,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
               currentPage={currentPage}
               onPageChange={handlePageChange}
               scrollToLoopTrigger={scrollToLoopTrigger}
-              showRightHandFingering={appSettings.showRightHandFingering}
+              showRightHandFingering={showRightHandFingering}
               onRenderComplete={({ totalPages: pages }) => {
                 setTotalPages(Math.max(1, pages));
               }}
@@ -1077,9 +1116,9 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
                 pdfDoc={pdfDoc}
                 currentPage={currentPage}
                 onPageChange={handlePageChange}
-                fitMode={appSettings.fitMode}
-                scrollMode={appSettings.scrollMode}
-                twoPageLandscape={appSettings.twoPageLandscape}
+                fitMode={fitMode}
+                scrollMode={scrollMode}
+                twoPageLandscape={twoPageLandscape}
                 onTotalPages={setTotalPages}
                 zoom={zoom}
                 annotationProps={annotationProps}
@@ -1125,7 +1164,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
         }}
       >
         <SettingsPanel
-          settings={appSettings}
+          settings={{ ...appSettings, fitMode, scrollMode, twoPageLandscape, showRightHandFingering }}
           onChange={handleSettingsChangeLocal}
           onClose={() => setIsSettingsOpen(false)}
           wakeLockActive={wakeLock.isActive}
@@ -1187,7 +1226,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              const step = (twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
               handlePageChange(Math.max(1, currentPage - step));
             }}
             disabled={currentPage <= 1}
@@ -1206,7 +1245,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              const step = (twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
               handlePageChange(Math.min(totalPages, currentPage + step));
             }}
             disabled={currentPage >= totalPages}
@@ -1237,7 +1276,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              const step = (twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
               handlePageChange(Math.max(1, currentPage - step));
             }}
             disabled={currentPage <= 1}
@@ -1249,7 +1288,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           </button>
 
           <span className="px-1.5 font-mono text-[11px] tracking-wide text-slate-300">
-            {!isMusicXml && appSettings.twoPageLandscape && appSettings.scrollMode === 'single' && (containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : window.innerWidth > window.innerHeight) && currentPage + 1 <= totalPages
+            {!isMusicXml && twoPageLandscape && scrollMode === 'single' && (containerRef.current ? containerRef.current.offsetWidth > containerRef.current.offsetHeight : window.innerWidth > window.innerHeight) && currentPage + 1 <= totalPages
               ? `${currentPage}–${currentPage + 1} / ${totalPages}`
               : `${currentPage} / ${totalPages}`}
           </span>
@@ -1257,7 +1296,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const step = (appSettings.twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
+              const step = (twoPageLandscape && containerRef.current && containerRef.current.offsetWidth > containerRef.current.offsetHeight) ? 2 : 1;
               handlePageChange(Math.min(totalPages, currentPage + step));
             }}
             disabled={currentPage >= totalPages}
