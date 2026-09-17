@@ -1231,10 +1231,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             }}
             disabled={currentPage <= 1}
             className={`absolute left-0 top-1/2 -translate-y-1/2 h-20 rounded-r-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-r border-white/10 ${currentPage <= 1
-                ? 'opacity-0 pointer-events-none'
-                : hoverSide === 'left'
-                  ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
-                  : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
+              ? 'opacity-0 pointer-events-none'
+              : hoverSide === 'left'
+                ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
+                : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
               }`}
             title="Previous Page (←)"
             aria-label="Previous Page"
@@ -1250,10 +1250,10 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             }}
             disabled={currentPage >= totalPages}
             className={`absolute right-0 top-1/2 -translate-y-1/2 h-20 rounded-l-2xl z-30 flex items-center justify-center transition-all duration-200 focus:outline-none border-y border-l border-white/10 ${currentPage >= totalPages
-                ? 'opacity-0 pointer-events-none'
-                : hoverSide === 'right'
-                  ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
-                  : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
+              ? 'opacity-0 pointer-events-none'
+              : hoverSide === 'right'
+                ? 'w-11 bg-black/60 text-white backdrop-blur-md opacity-100 shadow-lg'
+                : 'w-9 bg-black/30 hover:bg-black/60 text-white/40 hover:text-white backdrop-blur-md opacity-30 hover:opacity-100 hover:w-11 active:scale-95 shadow-lg'
               }`}
             title="Next Page (→)"
             aria-label="Next Page"
