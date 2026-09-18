@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppSettingsDialog, type AppSettingsDialogProps, type AppSettingsTab } from './AppSettingsDialog';
 import type { AppSettings } from '../services/settingsService';
@@ -283,10 +283,81 @@ describe('AppSettingsDialog Account & cloud', () => {
         expect(screen.getByText(/Google Drive is the only supported cloud provider/)).toBeTruthy();
         expect(screen.queryByRole('button', { name: /dropbox|onedrive|icloud|add provider/i })).toBeNull();
         expect(within(screen.getByRole('tabpanel')).getAllByRole('button').map(button => button.textContent)).toEqual([
-            'Connect Google Drive', 'Choose Google account',
+            'Connect Google Drive', 'Choose Google account', 'Export metadata', 'Import metadata',
         ]);
         const permissions = screen.getByRole('link', { name: /Manage Google permissions/ });
         expect(permissions.getAttribute('href')).toBe('https://myaccount.google.com/connections');
         expect(permissions.getAttribute('rel')).toContain('noopener');
+    });
+});
+
+describe('AppSettingsDialog Library backup & transfer', () => {
+    it('disables export and import buttons when handlers are omitted', () => {
+        mount({ tab: 'account', onExportBackup: undefined, onImportBackup: undefined });
+        const exportBtn = screen.getByRole('button', { name: /Export metadata/i }) as HTMLButtonElement;
+        const importBtn = screen.getByRole('button', { name: /Import metadata/i }) as HTMLButtonElement;
+        expect(exportBtn.disabled).toBe(true);
+        expect(importBtn.disabled).toBe(true);
+    });
+
+    it('triggers onExportBackup and shows success notification', async () => {
+        const onExportBackup = vi.fn().mockResolvedValue(undefined);
+        mount({ tab: 'account', onExportBackup });
+        const exportBtn = screen.getByRole('button', { name: /Export metadata/i });
+
+        fireEvent.click(exportBtn);
+        expect(onExportBackup).toHaveBeenCalledTimes(1);
+
+        await waitFor(() => {
+            expect(screen.getByText(/Metadata exported successfully/i)).toBeTruthy();
+        });
+    });
+
+    it('displays error alert when export fails', async () => {
+        const onExportBackup = vi.fn().mockRejectedValue(new Error('Storage access failed'));
+        mount({ tab: 'account', onExportBackup });
+        const exportBtn = screen.getByRole('button', { name: /Export metadata/i });
+
+        fireEvent.click(exportBtn);
+
+        await waitFor(() => {
+            expect(screen.getByRole('alert').textContent).toBe('Storage access failed');
+        });
+    });
+
+    it('triggers onImportBackup on file selection and displays summary', async () => {
+        const summary = {
+            scoresImported: 2,
+            scoresUpdated: 1,
+            annotationPagesImported: 3,
+            annotationPagesUpdated: 0,
+            presetsImported: 1,
+        };
+        const onImportBackup = vi.fn().mockResolvedValue(summary);
+        mount({ tab: 'account', onImportBackup });
+
+        const file = new File(['{"appName":"scoretone"}'], 'backup.json', { type: 'application/json' });
+        const fileInput = screen.getByLabelText('Upload backup JSON file');
+
+        fireEvent.change(fileInput, { target: { files: [file] } });
+        expect(onImportBackup).toHaveBeenCalledWith(file);
+
+        await waitFor(() => {
+            expect(screen.getByText(/Successfully imported: 2 new scores, 1 score updated, 3 annotation pages, 1 preset\./i)).toBeTruthy();
+        });
+    });
+
+    it('displays error alert when import fails', async () => {
+        const onImportBackup = vi.fn().mockRejectedValue(new Error('Invalid backup file: Not a recognized ScoreTone export'));
+        mount({ tab: 'account', onImportBackup });
+
+        const file = new File(['bad'], 'backup.json', { type: 'application/json' });
+        const fileInput = screen.getByLabelText('Upload backup JSON file');
+
+        fireEvent.change(fileInput, { target: { files: [file] } });
+
+        await waitFor(() => {
+            expect(screen.getByRole('alert').textContent).toContain('Invalid backup file: Not a recognized ScoreTone export');
+        });
     });
 });

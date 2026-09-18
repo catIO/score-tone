@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { googleDriveService } from '../services/googleDriveService';
 import type { AppSettings } from '../services/settingsService';
+import type { ImportSummary } from '../services/backupService';
 import { AppSettingsDialog, getAccountConnectionStatus, type AppSettingsTab } from './AppSettingsDialog';
 import { AddScoreDialog } from './AddScoreDialog';
 
@@ -25,6 +26,8 @@ interface HeaderBarProps {
   driveToken: string | null;
   onDriveLogout?: () => void;
   onChooseAccount?: () => void;
+  onExportBackup?: () => Promise<void> | void;
+  onImportBackup?: (file: File) => Promise<ImportSummary>;
   stats: {
     totalScores: number;
     pdfCount: number;
@@ -50,6 +53,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   driveToken,
   onDriveLogout,
   onChooseAccount,
+  onExportBackup,
+  onImportBackup,
   stats,
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -410,6 +415,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           onOpenDrive={onOpenDrive ? () => leaveSettings(onOpenDrive) : undefined}
           onChooseAccount={onChooseAccount}
           onDriveLogout={onDriveLogout}
+          onExportBackup={onExportBackup}
+          onImportBackup={onImportBackup}
           stats={stats}
         />
       )}

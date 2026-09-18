@@ -1,8 +1,9 @@
-import React, { useId, useLayoutEffect, useRef } from 'react';
+import React, { useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Cloud, ExternalLink, Settings, User, X } from 'lucide-react';
+import { Cloud, Download, ExternalLink, Settings, Upload, User, X } from 'lucide-react';
 import type { AppSettings } from '../services/settingsService';
 import type { GoogleUserProfile } from '../services/googleDriveService';
+import type { ImportSummary } from '../services/backupService';
 
 export type AppSettingsTab = 'general' | 'account';
 
@@ -22,6 +23,8 @@ export interface AppSettingsDialogProps {
     onChooseAccount?: () => void;
     onDriveLogout?: () => void;
     stats?: { totalScores: number; offlineCount: number; driveCount: number };
+    onExportBackup?: () => Promise<void> | void;
+    onImportBackup?: (file: File) => Promise<ImportSummary>;
 }
 
 export function getAccountConnectionStatus(online: boolean, connected: boolean, profile: GoogleUserProfile | null): string {
@@ -94,7 +97,7 @@ function PreferenceToggle({ label, description, checked, onChange }: {
 export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
     tab, onTabChange, onClose, settings, onSettingsChange, profile, connected,
     configured, online, cloudBusy = false, cloudError, onOpenDrive, onChooseAccount,
-    onDriveLogout, stats,
+    onDriveLogout, stats, onExportBackup, onImportBackup,
 }) => {
     const id = useId();
     const dialogRef = useRef<HTMLDivElement>(null);
@@ -102,6 +105,55 @@ export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
     const initialTab = useRef(tab);
     const closeRef = useRef(onClose);
     closeRef.current = onClose;
+
+    const [exporting, setExporting] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [backupStatus, setBackupStatus] = useState<string | null>(null);
+    const [backupError, setBackupError] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleExport = async () => {
+        if (!onExportBackup || exporting || importing) return;
+        setExporting(true);
+        setBackupStatus(null);
+        setBackupError(null);
+        try {
+            await onExportBackup();
+            setBackupStatus('Metadata exported successfully.');
+        } catch (err: any) {
+            setBackupError(err?.message || 'Failed to export metadata.');
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file || !onImportBackup || exporting || importing) return;
+        event.target.value = '';
+        setImporting(true);
+        setBackupStatus(null);
+        setBackupError(null);
+        try {
+            const summary = await onImportBackup(file);
+            const parts: string[] = [];
+            if (summary.scoresImported > 0) parts.push(`${summary.scoresImported} new score${summary.scoresImported > 1 ? 's' : ''}`);
+            if (summary.scoresUpdated > 0) parts.push(`${summary.scoresUpdated} score${summary.scoresUpdated > 1 ? 's' : ''} updated`);
+            if (summary.annotationPagesImported > 0 || summary.annotationPagesUpdated > 0) {
+                const pages = summary.annotationPagesImported + summary.annotationPagesUpdated;
+                parts.push(`${pages} annotation page${pages > 1 ? 's' : ''}`);
+            }
+            if (summary.presetsImported > 0) parts.push(`${summary.presetsImported} preset${summary.presetsImported > 1 ? 's' : ''}`);
+
+            setBackupStatus(parts.length > 0
+                ? `Successfully imported: ${parts.join(', ')}.`
+                : 'Import completed. No new metadata found.');
+        } catch (err: any) {
+            setBackupError(err?.message || 'Failed to import metadata.');
+        } finally {
+            setImporting(false);
+        }
+    };
 
     useLayoutEffect(() => {
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -272,6 +324,54 @@ export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
                                 <div key={label}><dt className="text-xs text-[var(--md-on-surface-variant)]">{label}</dt><dd className="mt-1 text-lg font-semibold">{count}</dd></div>
                             ))}
                         </dl>}
+
+                        <div className="rounded-2xl border p-4" style={cardStyle}>
+                            <h3 className="flex items-center gap-2 text-sm font-semibold">
+                                <Download size={20} className="text-[var(--md-primary)]" aria-hidden="true" />
+                                Library Data & Backup
+                            </h3>
+                            <p className="mb-4 mt-2 text-xs leading-relaxed text-[var(--md-on-surface-variant)]">
+                                Export your loops, bookmarks, freehand annotations, and custom presets to a JSON file to transfer between devices or keep a local backup.
+                            </p>
+                            {backupStatus && (
+                                <p role="status" className="mb-3 rounded-xl p-3 text-xs leading-relaxed" style={{ background: 'var(--md-primary-container)', color: 'var(--md-on-primary-container)' }}>
+                                    {backupStatus}
+                                </p>
+                            )}
+                            {backupError && (
+                                <p role="alert" className="mb-3 rounded-xl p-3 text-xs leading-relaxed" style={{ background: 'var(--md-error-container)', color: 'var(--md-error)' }}>
+                                    {backupError}
+                                </p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    disabled={exporting || importing || !onExportBackup}
+                                    onClick={handleExport}
+                                    className={`${secondaryButton} flex items-center gap-2`}
+                                >
+                                    <Download size={16} aria-hidden="true" />
+                                    {exporting ? 'Exporting…' : 'Export metadata'}
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={exporting || importing || !onImportBackup}
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className={`${secondaryButton} flex items-center gap-2`}
+                                >
+                                    <Upload size={16} aria-hidden="true" />
+                                    {importing ? 'Importing…' : 'Import metadata'}
+                                </button>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileImport}
+                                    accept=".json,application/json"
+                                    className="hidden"
+                                    aria-label="Upload backup JSON file"
+                                />
+                            </div>
+                        </div>
 
                         <div className="space-y-3 text-xs leading-relaxed text-[var(--md-on-surface-variant)]">
                             <p>Disconnecting stops using this Google account for Drive access. Your library and any downloaded scores stay exactly as they are. It does not delete scores or revoke Google access.</p>

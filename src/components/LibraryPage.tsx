@@ -8,6 +8,13 @@ import { isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/stora
 import { useLibraryStorage } from '../hooks/useLibraryStorage';
 import { googleDriveService, type GoogleDriveFileMetadata } from '../services/googleDriveService';
 import type { AppSettings } from '../services/settingsService';
+import {
+  exportLibraryBackup,
+  triggerBackupDownload,
+  parseBackupFile,
+  importLibraryBackup,
+  type ImportSummary,
+} from '../services/backupService';
 import { useDriveConnection } from '../hooks/useDriveConnection';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import HeaderBar from './HeaderBar';
@@ -167,6 +174,22 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     } catch (e) {
       setErrorMsg('Failed to initialize database.');
     }
+  };
+
+  const handleExportBackup = async () => {
+    const pkg = await exportLibraryBackup(storageService.db, settings);
+    triggerBackupDownload(pkg);
+  };
+
+  const handleImportBackup = async (file: File): Promise<ImportSummary> => {
+    const text = await file.text();
+    const pkg = parseBackupFile(text);
+    const summary = await importLibraryBackup(storageService.db, pkg);
+    if (pkg.settings && onSettingsChange) {
+      onSettingsChange({ ...settings, ...pkg.settings });
+    }
+    await loadFiles();
+    return summary;
   };
 
   const processLocalFile = async (file: File) => {
@@ -587,6 +610,8 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
             setChoosingAccount(false);
           }
         }}
+        onExportBackup={handleExportBackup}
+        onImportBackup={handleImportBackup}
         stats={stats}
       />
 
