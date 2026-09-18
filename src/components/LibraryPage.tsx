@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FileUp, HardDrive, Trash2, FileText, CheckCircle2, Download, AlertCircle,
-  CloudOff, X, Music, Repeat, BookOpen, Sliders, Play,
+  CloudOff, X, Music, Repeat, BookOpen, Sliders, Play, Plus,
   Bookmark as BookmarkIcon, LayoutGrid, List, Search, ArrowUpDown, Clock
 } from 'lucide-react';
 import { isMusicXmlFile, type ScoreFile, type Bookmark } from '../services/storageService';
@@ -19,6 +19,7 @@ import { useDriveConnection } from '../hooks/useDriveConnection';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import HeaderBar from './HeaderBar';
 import { DriveFileBrowser } from './DriveFileBrowser';
+import { AddScoreDialog } from './AddScoreDialog';
 
 interface LibraryPageProps {
   settings: AppSettings;
@@ -77,6 +78,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   const [accountError, setAccountError] = useState<string | null>(null);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showAddScoreModal, setShowAddScoreModal] = useState(false);
   const [showDriveBrowser, setShowDriveBrowser] = useState(() => openDriveOnMount && googleDriveService.hasToken());
   // Share dropdown state: tracks which card's menu is open and which item was just copied
   const [openShareId, setOpenShareId] = useState<string | null>(null);
@@ -632,7 +634,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
       <HeaderBar
         settings={settings}
         onSettingsChange={onSettingsChange}
-        cloudBusy={connecting || choosingAccount}
+        cloudBusy={connecting || choosingAccount || loading}
         cloudError={accountError}
         theme={theme}
         onToggleTheme={onToggleTheme || (() => { })}
@@ -864,10 +866,10 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
         {files.length === 0 ? (
           /* Empty Library Onboarding Hero */
           <div
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => setShowAddScoreModal(true)}
             onDragOver={e => e.preventDefault()}
             onDrop={handleDrop}
-            className="flex flex-col items-center justify-center p-6 sm:p-12 md:p-16 rounded-3xl cursor-pointer transition-all hover:border-[var(--md-primary)] text-center my-4 sm:my-6 relative overflow-hidden group"
+            className="flex flex-col items-center justify-center p-8 sm:p-14 md:p-20 rounded-3xl cursor-pointer transition-all hover:border-[var(--md-primary)] text-center my-4 sm:my-6 relative overflow-hidden group"
             style={{
               border: '2px dashed var(--md-outline-variant)',
               background: 'var(--md-surface-1)',
@@ -880,62 +882,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
             >
               <FileUp className="w-8 h-8" />
             </div>
-            <h3 className="text-xl font-bold mb-1" style={{ color: 'var(--md-on-surface)' }}>
-              Add your first sheet music
-            </h3>
-            <p className="text-sm max-w-sm mb-4" style={{ color: 'var(--md-on-surface-variant)' }}>
-              Drop a PDF or MusicXML file here, or click to browse files on your device.
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
-              <span
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
-                style={{
-                  background: 'var(--md-pdf-bg)',
-                  borderColor: 'var(--md-pdf-border)',
-                  color: 'var(--md-pdf-text)',
-                }}
-              >
-                PDF (.pdf)
-              </span>
-              <span
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
-                style={{
-                  background: 'var(--md-xml-bg)',
-                  borderColor: 'var(--md-xml-border)',
-                  color: 'var(--md-xml-text)',
-                }}
-              >
-                MusicXML (.xml, .musicxml, .mxl)
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                className="md-btn-filled text-xs py-2 px-5 rounded-full"
-              >
-                Browse Files
-              </button>
-              {isGoogleConfigured && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); handleGoogleDrivePick(); }}
-                  disabled={connecting || loading || !isOnline}
-                  className="md-btn-tonal text-xs py-2 px-5 rounded-full flex items-center gap-2"
-                >
-                  <svg width="16" height="16" viewBox="0 0 87.3 78" fill="none">
-                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47" />
-                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335" />
-                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                    <path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 27h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-                  </svg>
-                  <span>Google Drive</span>
-                </button>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowAddScoreModal(true); }}
+              className="md-btn-filled text-sm sm:text-base py-2.5 px-6 rounded-full flex items-center gap-2 shadow-sm font-semibold hover:scale-105 transition-all"
+            >
+              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span>Add your first score</span>
+            </button>
           </div>
         ) : filteredFiles.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 rounded-2xl gap-3 text-center"
@@ -1379,6 +1333,24 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
       </main>
 
       {/* About Modal */}
+      {showAddScoreModal && (
+        <AddScoreDialog
+          onClose={() => setShowAddScoreModal(false)}
+          onAddScore={() => {
+            setShowAddScoreModal(false);
+            fileInputRef.current?.click();
+          }}
+          onOpenDrive={isGoogleConfigured ? () => {
+            setShowAddScoreModal(false);
+            handleGoogleDrivePick();
+          } : undefined}
+          profile={googleDriveService.getUserProfile()}
+          connected={Boolean(driveToken)}
+          configured={isGoogleConfigured}
+          online={isOnline}
+          cloudBusy={connecting || choosingAccount || loading}
+        />
+      )}
       {showAboutModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
