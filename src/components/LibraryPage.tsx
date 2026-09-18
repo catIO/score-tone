@@ -50,6 +50,24 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   const [sortBy, setSortBy] = useState<'recent' | 'name' | 'size'>('recent');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const [relinkTarget, setRelinkTarget] = useState<ScoreFile | null>(null);
+  const relinkFileInputRef = useRef<HTMLInputElement>(null);
+
+  const promptRelinkFile = (file: ScoreFile) => {
+    setRelinkTarget(file);
+    relinkFileInputRef.current?.click();
+  };
+
+  const handleRelinkFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file && relinkTarget) {
+      const target = relinkTarget;
+      setRelinkTarget(null);
+      await processLocalFile(file, target.id);
+    }
+  };
+
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false); // true only during Drive auth + picker
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -192,7 +210,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     return summary;
   };
 
-  const processLocalFile = async (file: File) => {
+  const processLocalFile = async (file: File, targetFileId?: string) => {
     const nameLower = file.name.toLowerCase();
     let isPdf = file.type === 'application/pdf' || nameLower.endsWith('.pdf');
     let isXml = file.type.includes('xml') || nameLower.endsWith('.xml') || nameLower.endsWith('.musicxml') || nameLower.endsWith('.mxl');
@@ -218,10 +236,31 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     setLoading(true);
     setErrorMsg(null);
     try {
+      const cleanName = file.name.replace(/\.(pdf|xml|musicxml|mxl)$/i, '');
+      const currentFiles = await storageService.getFiles();
+      const existingUncached = targetFileId
+        ? currentFiles.find(f => f.id === targetFileId)
+        : currentFiles.find(f => f.source === 'local' && !f.offline && f.name.toLowerCase() === cleanName.toLowerCase());
+
+      if (existingUncached) {
+        const updated: ScoreFile = {
+          ...existingUncached,
+          fileType: isXml ? 'musicxml' : (existingUncached.fileType || 'pdf'),
+          lastOpened: Date.now(),
+          offline: true,
+          size: file.size,
+        };
+        await storageService.cacheFileOffline(updated, file);
+        await loadFiles();
+        setLoading(false);
+        onOpenFile(updated, file);
+        return;
+      }
+
       const fileId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newFile: ScoreFile = {
         id: fileId,
-        name: file.name.replace(/\.(pdf|xml|musicxml|mxl)$/i, ''),
+        name: cleanName,
         source: 'local',
         fileType: isXml ? 'musicxml' : 'pdf',
         lastOpened: Date.now(),
@@ -394,13 +433,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   // Prefer offline copies. Online failures ask for an explicit reconnect;
   // never launch OAuth after a download has consumed the click gesture.
   const handleFileClick = async (file: ScoreFile, page?: number, queryParams?: Record<string, string>) => {
-    if (file.source === 'local' && !file.offline) {
-      // Legacy local file without a cached blob — ask user to re-upload it
-      setErrorMsg(`"${file.name}" needs to be re-uploaded. Drop the PDF again to reopen it.`);
-      return;
-    }
-
-    // 1. First check if the PDF blob is already cached in IndexedDB
+    // 1. First check if the file blob is already cached in IndexedDB
     try {
       const cachedBlob = await storageService.getFileData(file.id);
       if (cachedBlob) {
@@ -412,7 +445,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
         return;
       }
     } catch {
-      // Ignore cache check errors, fall through to download
+      // Ignore cache check errors, fall through to download or local relink
+    }
+
+    if (file.source === 'local') {
+      const format = isMusicXmlFile(file) ? 'MusicXML' : 'PDF';
+      setErrorMsg(`"${file.name}" needs its ${format} file on this device. Select or drop the file to open it.`);
+      promptRelinkFile(file);
+      return;
     }
 
     if (!isOnline) {
@@ -578,6 +618,14 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
         onChange={handleFileSelect}
         accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml,text/plain,application/octet-stream,text/*"
         className="hidden"
+      />
+      <input
+        type="file"
+        ref={relinkFileInputRef}
+        onChange={handleRelinkFileSelect}
+        accept=".pdf,.xml,.musicxml,.mxl,application/pdf,text/xml,application/xml,text/plain,application/octet-stream,text/*"
+        className="hidden"
+        aria-label="Re-link score file"
       />
 
       {/* ── Modern Top App Bar (Bright Sight inspired) ── */}
@@ -1013,8 +1061,17 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                   {/* Center Hover Action */}
                   <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center z-20 pointer-events-none">
                     <span className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-amber-400 text-amber-950 font-bold text-xs shadow-lg transform scale-90 group-hover:scale-100 transition-transform">
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      Open Score
+                      {file.source === 'local' && !file.offline ? (
+                        <>
+                          <FileUp className="w-3.5 h-3.5" />
+                          Link File
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          Open Score
+                        </>
+                      )}
                     </span>
                   </div>
 
@@ -1115,6 +1172,20 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                           ) : (
                             <Download className="w-3.5 h-3.5 opacity-75 hover:opacity-100" />
                           )}
+                        </button>
+                      )}
+                      {file.source === 'local' && !file.offline && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            promptRelinkFile(file);
+                          }}
+                          className="md-icon-btn transition-colors hover:text-[var(--md-primary)]"
+                          title={`Link ${isMusicXmlFile(file) ? 'MusicXML' : 'PDF'} file on this device`}
+                          style={{ width: 32, height: 32 }}
+                          aria-label={`Link local file for ${file.name}`}
+                        >
+                          <FileUp className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -1262,6 +1333,19 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
                         ) : (
                           <Download className="w-4 h-4 opacity-75 hover:opacity-100" />
                         )}
+                      </button>
+                    ) : file.source === 'local' && !file.offline ? (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          promptRelinkFile(file);
+                        }}
+                        className="md-icon-btn transition-colors hover:text-[var(--md-primary)]"
+                        title={`Link ${isMusicXmlFile(file) ? 'MusicXML' : 'PDF'} file on this device`}
+                        style={{ width: 32, height: 32 }}
+                        aria-label={`Link local file for ${file.name}`}
+                      >
+                        <FileUp className="w-4 h-4" />
                       </button>
                     ) : (
                       <div className="w-8 h-8 pointer-events-none" />
