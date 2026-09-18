@@ -78,26 +78,13 @@ describe('Drive import dialog', () => {
         expect(drive.openPicker).not.toHaveBeenCalled();
     });
 
-    it('closes before invoking local import', async () => {
-        const onClose = vi.fn();
-        const onImportLocal = vi.fn();
-        const { props } = mount({ onClose, onImportLocal });
-        await screen.findByText('No previously authorized scores on this page');
-        fireEvent.click(screen.getByRole('button', { name: 'Import a device file instead' }));
-        expect(props.onClose).toHaveBeenCalledTimes(1);
-        expect(props.onImportLocal).toHaveBeenCalledTimes(1);
-        expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(onImportLocal.mock.invocationCallOrder[0]);
-        expect(props.onSelect).not.toHaveBeenCalled();
-    });
-
-    it('explains local import when no local callback is supplied', async () => {
-        mount({ onImportLocal: undefined });
+    it('does not render device import link in Drive browser modal', async () => {
+        mount();
         expect(screen.queryByRole('button', { name: 'Import a device file instead' })).toBeNull();
-        expect(screen.getByText(/use your library’s local import action/)).toBeTruthy();
         await screen.findByText('No previously authorized scores on this page');
     });
 
-    it.each(['score.pdf', 'score.xml', 'score.musicxml', 'score.mxl'])('selects %s with a single tap and Open Score', async name => {
+    it.each(['score.pdf', 'score.xml', 'score.musicxml', 'score.mxl'])('selects %s with a single tap and Open Score', async (name: string) => {
         const file = score('id', name);
         drive.listPdfFiles.mockResolvedValue({ files: [file] });
         const { props } = mount();

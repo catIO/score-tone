@@ -49,9 +49,8 @@ const SCORE_MIME_TYPES = [
   'application/pdf', 'application/xml', 'text/xml',
   'application/vnd.recordare.musicxml+xml', 'application/vnd.recordare.musicxml',
 ];
-// Drive sometimes assigns these generic MIME types to MusicXML/MXL uploads.
-const PICKER_MIME_TYPES = [...SCORE_MIME_TYPES, 'text/plain', 'application/zip',
-  'application/x-zip-compressed', 'application/octet-stream'].join(',');
+// Drive sometimes assigns these MIME types to MusicXML/MXL uploads.
+const PICKER_MIME_TYPES = [...SCORE_MIME_TYPES, 'text/plain', 'application/zip'].join(',');
 const SCORE_EXTENSION = /\.(pdf|xml|musicxml|mxl)$/i;
 
 let accessToken: string | null = null;
@@ -162,10 +161,12 @@ if (typeof window !== 'undefined') {
     if (event.storageArea && event.storageArea !== window.localStorage) return;
     if (event.key !== null && ![USER_PROFILE_KEY, SESSION_EVENT_KEY, TOKEN_KEY, EXPIRES_KEY].includes(event.key)) return;
     const previousAccountId = profile?.sub ?? null;
+    const newProfile = readProfile(localStorage.getItem(USER_PROFILE_KEY));
+    // If the account identity did not actually change, do not invalidate the active session
+    if (previousAccountId && newProfile?.sub === previousAccountId) return;
     invalidateSession();
     try {
-      // Read the latest value rather than replaying a potentially stale event value.
-      profile = readProfile(localStorage.getItem(USER_PROFILE_KEY));
+      profile = newProfile;
       loginHint = profile?.email || localStorage.getItem(LOGIN_HINT_KEY);
     } catch { profile = null; loginHint = null; }
     dispatchAccountChange(previousAccountId, 'storage');
@@ -185,11 +186,22 @@ function loadScript(src: string, ready: () => boolean): Promise<void> {
       script.removeEventListener('load', onLoad);
       script.removeEventListener('error', onError);
       if (error) {
-        script.remove();
         reject(error);
       } else resolve();
     };
-    const onLoad = () => finish(ready() ? undefined : new Error('Google library loaded but is unavailable. Please retry.'));
+    const onLoad = () => {
+      if (ready()) {
+        finish();
+      } else {
+        let attempts = 0;
+        const checkReady = () => {
+          if (ready()) finish();
+          else if (++attempts < 10) setTimeout(checkReady, 50);
+          else finish(new Error('Google library loaded but is unavailable. Please retry.'));
+        };
+        setTimeout(checkReady, 20);
+      }
+    };
     const onError = () => finish(new Error('Could not load Google services. Check your connection and browser settings, then retry.'));
     const timer = setTimeout(() => finish(new Error('Loading Google services timed out. Please retry.')), LOAD_TIMEOUT_MS);
     script.addEventListener('load', onLoad);
@@ -213,6 +225,7 @@ function loadGsiScript(): Promise<void> {
 async function loadPickerApi(): Promise<void> {
   if (window.google?.picker) return;
   await loadScript('https://apis.google.com/js/api.js', () => !!window.gapi?.load);
+  if (window.google?.picker) return;
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => finish(new Error('Google Picker loading timed out. Please retry.')), LOAD_TIMEOUT_MS);
     const finish = (error?: Error) => {
@@ -435,13 +448,59 @@ export const googleDriveService = {
     const revision = sessionRevision;
     const params = new URLSearchParams({ fields: 'id,name,mimeType,size,modifiedTime,thumbnailLink' });
     if (API_KEY) params.set('key', API_KEY);
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
+    const id = encodeURIComponent(fileId);
+    let response: Response | undefined;
+    if (token) {
+      try {
+        response = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch { /* fall through to public request */ }
+    }
+    if (!response || !response.ok) {
+      if (response?.status === 401 && token) clearStoredToken(token);
+      if (API_KEY) {
+        try {
+          const publicResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?${params}`);
+          if (publicResponse.ok) response = publicResponse;
+        } catch { /* keep initial error */ }
+      }
+      // If REST API is inaccessible (e.g. 404 because drive.file scope only covers Picker files),
+      // try resolving metadata via Google Drive's public download endpoints.
+      if (!response || !response.ok) {
+        const publicDownloadUrls = [
+          `https://docs.google.com/uc?export=download&id=${id}&confirm=t`,
+          `https://drive.usercontent.google.com/download?id=${id}&export=download`,
+          `https://lh3.googleusercontent.com/d/${id}`,
+        ];
+        for (const dlUrl of publicDownloadUrls) {
+          try {
+            const dlRes = await fetch(dlUrl, {
+              method: 'GET',
+              headers: { Range: 'bytes=0-4096' },
+            });
+            const ctype = dlRes.headers.get('content-type') || '';
+            if (dlRes.ok && !ctype.includes('text/html')) {
+              const disposition = dlRes.headers.get('content-disposition') || '';
+              const filenameMatch = disposition.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i);
+              const rawFilename = filenameMatch ? decodeURIComponent(filenameMatch[1]) : '';
+              const totalSize = parseInt(dlRes.headers.get('content-range')?.split('/')[1] || dlRes.headers.get('content-length') || '0', 10);
+              assertSession(revision);
+              return {
+                id: fileId,
+                name: rawFilename || 'Google Drive Score.pdf',
+                mimeType: ctype.split(';')[0] || 'application/pdf',
+                size: totalSize || 0,
+              };
+            }
+          } catch { /* try next endpoint */ }
+        }
+      }
+    }
     assertSession(revision);
-    if (!response.ok) {
-      if (response.status === 401 && token) clearStoredToken(token);
-      throw new Error(`Could not read score details (HTTP ${response.status}). Select the file with Google Picker using an account that has access, or import a device file. Pasting a link does not grant permission.`);
+    if (!response || !response.ok) {
+      const status = response ? ` (HTTP ${response.status})` : '';
+      throw new Error(`Could not access this score${status}. Make sure General access for this file in Google Drive is set to "Anyone with the link can view".`);
     }
     const data = await response.json();
     assertSession(revision);
@@ -450,10 +509,67 @@ export const googleDriveService = {
     return file;
   },
 
+  async isShieldsActive(): Promise<boolean> {
+    try {
+      if (typeof window === 'undefined') return false;
+      let isBrave = false;
+      if (typeof (navigator as any)?.brave?.isBrave === 'function') {
+        isBrave = await (navigator as any).brave.isBrave().catch(() => false);
+      }
+      const isFirefox = typeof navigator !== 'undefined' && navigator.userAgent.includes('Firefox');
+      if (!isBrave && !isFirefox) return false;
+
+      return new Promise<boolean>((resolve) => {
+        let settled = false;
+        const done = (blocked: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          img.onload = null;
+          img.onerror = null;
+          resolve(blocked);
+        };
+
+        const timer = setTimeout(() => done(false), 800);
+
+        // Probe 1: Tracking pixel Image (ERR_BLOCKED_BY_CLIENT triggers onerror on <img>)
+        const img = new Image();
+        img.onload = () => done(false);
+        img.onerror = () => done(true);
+        img.src = 'https://www.google-analytics.com/collect?v=1&t=pageview&tid=UA-000000-1&cid=555';
+
+        // Probe 2: Fetch timing probe in parallel
+        const t0 = performance.now();
+        fetch('https://www.google-analytics.com/collect?v=1&t=pageview&tid=UA-000000-1&cid=555', {
+          mode: 'no-cors',
+          cache: 'no-store',
+        })
+          .then(() => {
+            if (performance.now() - t0 < 25) {
+              done(true); // Instant local block by Brave Shields
+            }
+          })
+          .catch(() => done(true));
+      });
+    } catch {
+      return false;
+    }
+  },
+
   async openPicker(token: string, signal?: AbortSignal): Promise<GoogleDriveFileMetadata | null> {
     if (signal?.aborted) return null;
     assertCurrentToken(token);
     if (!API_KEY || !APP_ID) throw new Error('Google Picker is not configured. Choose a previously authorized score or import a device file.');
+
+    try {
+      document.querySelectorAll('.picker-dialog, .picker-dialog-bg').forEach(el => el.remove());
+    } catch { /* ignore */ }
+
+    // Proactively verify if browser shields or tracking protection are actively blocking Picker
+    if (await this.isShieldsActive()) {
+      throw new Error('Google Picker is blocked by browser privacy protections (such as Brave Shields or tracking protection). Turn shields off for this site or paste a share link.');
+    }
+
     const revision = sessionRevision;
     await loadPickerApi();
     if (signal?.aborted) return null;
@@ -470,6 +586,9 @@ export const googleDriveService = {
         signal?.removeEventListener('abort', onAbort);
         try { picker?.setVisible(false); } catch { /* Always attempt disposal. */ }
         try { picker?.dispose(); } catch { /* Cleanup must not prevent settlement. */ }
+        try {
+          document.querySelectorAll('.picker-dialog, .picker-dialog-bg').forEach(el => el.remove());
+        } catch { /* ignore */ }
         if (error) reject(error); else resolve(file);
       };
       const onAccountChanged = () => {
@@ -487,10 +606,15 @@ export const googleDriveService = {
           .setMode(window.google.picker.DocsViewMode.LIST);
         picker = new window.google.picker.PickerBuilder()
           .addView(view)
+          .addView(new window.google.picker.DocsView()
+            .setMimeTypes(PICKER_MIME_TYPES)
+            .setIncludeFolders(true)
+            .setSelectFolderEnabled(false)
+            .setLabel('Google Drive'))
           .setOAuthToken(token)
           .setDeveloperKey(API_KEY)
           .setAppId(APP_ID)
-          .setOrigin(window.location.origin)
+          .setOrigin(window.location.protocol + '//' + window.location.host)
           .setTitle('Select a PDF, MusicXML, or MXL score')
           .setCallback((data: any) => {
             if (settled) return;
@@ -544,5 +668,8 @@ export const googleDriveService = {
   getUserProfile(): GoogleUserProfile | null { return profile ? { ...profile } : null; },
 };
 
-// Preload code, not credentials, to keep explicit sign-in inside the click gesture.
-if (typeof window !== 'undefined') void loadGsiScript().catch(() => { /* An explicit reconnect can retry. */ });
+// Preload code, not credentials, to keep explicit sign-in and picker launch inside the click gesture.
+if (typeof window !== 'undefined') {
+  void loadGsiScript().catch(() => { /* An explicit reconnect can retry. */ });
+  void loadPickerApi().catch(() => { /* Retry on demand. */ });
+}

@@ -46,6 +46,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false); // true only during Drive auth + picker
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [driveFallbackError, setDriveFallbackError] = useState<string | null>(null);
   const driveToken = useDriveConnection();
   const [choosingAccount, setChoosingAccount] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
@@ -235,12 +236,22 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     }
     setConnecting(true);
     setErrorMsg(null);
+    setDriveFallbackError(null);
     try {
-      await googleDriveService.getAccessToken();
+      const token = await googleDriveService.getAccessToken();
       if (!isCurrentLibrary()) return;
-      setShowDriveBrowser(true);
+      // Primary direct flow: attempt to open Google Picker immediately
+      const picked = await googleDriveService.openPicker(token);
+      if (!isCurrentLibrary()) return;
+      if (picked) {
+        await handleDriveFileSelected(picked);
+      }
+      // If picked === null, user cancelled or closed the picker
     } catch (err: any) {
-      setErrorMsg(err.message || 'Google sign-in failed.');
+      console.warn('Google Picker blocked or failed; opening fallback dialog:', err);
+      if (!isCurrentLibrary()) return;
+      setDriveFallbackError(err?.message || 'Google Picker could not open.');
+      setShowDriveBrowser(true);
     } finally {
       setConnecting(false);
     }
@@ -251,7 +262,12 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
     setLoading(true);
     setErrorMsg(null);
     try {
-      const token = await googleDriveService.getAccessToken({ allowInteractive: false });
+      let token: string | null = null;
+      try {
+        token = await googleDriveService.getAccessToken({ allowInteractive: false });
+      } catch {
+        token = null;
+      }
       if (!isCurrentLibrary()) return;
       const currentFiles = await storageService.getFiles();
       const existing = currentFiles.find(f => f.id === metadata.id);
@@ -278,7 +294,7 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
         return;
       }
 
-      const blob = await googleDriveService.downloadFile(metadata.id, token);
+      const blob = await googleDriveService.downloadFile(metadata.id, token || undefined);
       if (!isCurrentLibrary()) return;
       const newFile: ScoreFile = {
         ...(existing || {}),
@@ -1505,12 +1521,16 @@ export const LibraryPage: React.FC<LibraryPageProps> = ({ onOpenFile, theme = 'd
           </div>
         </div>
       )}
-      {showDriveBrowser && driveToken && (
+      {showDriveBrowser && (
         <DriveFileBrowser
           onImportLocal={() => fileInputRef.current?.click()}
           token={driveToken}
+          fallbackError={driveFallbackError}
           onSelect={handleDriveFileSelected}
-          onClose={() => setShowDriveBrowser(false)}
+          onClose={() => {
+            setShowDriveBrowser(false);
+            setDriveFallbackError(null);
+          }}
         />
       )}
     </div>
