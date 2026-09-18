@@ -39,7 +39,7 @@ export const DriveFileBrowser: React.FC<DriveFileBrowserProps> = ({
   fallbackError: _fallbackError,
   onSelect,
   onClose,
-  onImportLocal,
+  onImportLocal: _onImportLocal,
 }) => {
   const [files, setFiles] = useState<GoogleDriveFileMetadata[]>([]);
   const [loading, setLoading] = useState(Boolean(token));

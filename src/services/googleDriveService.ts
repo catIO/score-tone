@@ -489,7 +489,6 @@ export const googleDriveService = {
               return {
                 id: fileId,
                 name: rawFilename || 'Google Drive Score.pdf',
-                mimeType: ctype.split(';')[0] || 'application/pdf',
                 size: totalSize || 0,
               };
             }
