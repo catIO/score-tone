@@ -808,6 +808,37 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
   };
 
+  const handleUpdateBookmark = async (updatedBookmark: Bookmark) => {
+    const existing = file.bookmarks || [];
+    const updatedBookmarks = existing.map(bm => bm.id === updatedBookmark.id ? updatedBookmark : bm);
+    const updatedFile = {
+      ...file,
+      bookmarks: updatedBookmarks,
+    };
+    try {
+      await storageService.saveFileMetadata(updatedFile);
+      onFileMetadataUpdated?.(updatedFile);
+
+      // If the currently active loop matches the loop being updated, update audioPlaybackService live
+      if (
+        updatedBookmark.type === 'loop' &&
+        updatedBookmark.loopRange &&
+        playbackState.loopRange
+      ) {
+        const oldBm = existing.find(b => b.id === updatedBookmark.id);
+        const isActive = oldBm?.loopRange &&
+          Math.abs(playbackState.loopRange.startBeat - oldBm.loopRange.startBeat) < 0.05 &&
+          Math.abs(playbackState.loopRange.endBeat - oldBm.loopRange.endBeat) < 0.05;
+        if (isActive) {
+          audioPlaybackService.applyLoopRange(updatedBookmark.loopRange, updatedBookmark.bpm);
+          setScrollToLoopTrigger(Date.now());
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to update bookmark', err);
+    }
+  };
+
   // Handle individual filter slider updates
   const handleFiltersChange = (newFilters: FilterSettings) => {
     setFilters(newFilters);
@@ -1195,6 +1226,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           onAddBookmark={handleAddBookmark}
           onAddLoopBookmark={handleAddLoopBookmark}
           onSelectLoopBookmark={handleSelectLoopBookmark}
+          onUpdateBookmark={handleUpdateBookmark}
           onDeleteBookmark={handleDeleteBookmark}
           onClose={() => setIsBookmarksOpen(false)}
           playbackState={playbackState}

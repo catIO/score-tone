@@ -439,6 +439,32 @@ class AudioPlaybackService {
     return { startBeat, endBeat };
   }
 
+  public getBeatRangeForMeasures(startMeasure: number, endMeasure: number): { startBeat: number; endBeat: number } {
+    const minM = Math.min(startMeasure, endMeasure);
+    const maxM = Math.max(startMeasure, endMeasure);
+    const minIdx = Math.max(0, minM - 1);
+    const maxIdx = Math.max(0, maxM - 1);
+
+    const notes = this.scheduledNotes.filter(n => n.measureIndex >= minIdx && n.measureIndex <= maxIdx);
+    if (notes.length > 0) {
+      return {
+        startBeat: Math.min(...notes.map(n => n.timeInBeats)),
+        endBeat: Math.max(...notes.map(n => n.timeInBeats + n.durationInBeats)),
+      };
+    }
+
+    const bpb = this.beatsPerBar || 4;
+    return {
+      startBeat: minIdx * bpb,
+      endBeat: (maxIdx + 1) * bpb,
+    };
+  }
+
+  public getTotalMeasures(): number {
+    if (this.scheduledNotes.length === 0) return 0;
+    return Math.max(...this.scheduledNotes.map(n => n.measureIndex)) + 1;
+  }
+
   public async play(tempo?: number): Promise<void> {
     if (this.isCurrentlyPlaying) return;
     if (tempo && tempo >= 20 && tempo <= 300) {
