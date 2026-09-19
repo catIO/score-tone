@@ -22,6 +22,8 @@ export interface AppSettings {
   keepScreenAwake: boolean;
   /** Show right-hand guitar fingering (p, i, m, a) in MusicXML scores */
   showRightHandFingering: boolean;
+  /** Count and display successful loop repetitions in a row */
+  trackLoopRepetitions: boolean;
 }
 
 const DEFAULT_FILTERS: FilterSettings = {
@@ -56,7 +58,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoHideControls: true,
   twoPageLandscape: true,
   keepScreenAwake: true,
-  showRightHandFingering: true
+  showRightHandFingering: true,
+  trackLoopRepetitions: true,
 };
 
 const STORAGE_KEY = 'scoretone_settings';

@@ -29,6 +29,8 @@ interface ViewerToolbarProps {
   onLoopPauseSecondsChange?: (seconds: number) => void;
   isAnnotating?: boolean;
   onToggleAnnotate?: () => void;
+  trackLoopRepetitions?: boolean;
+  onToggleTrackLoopRepetitions?: (enabled: boolean) => void;
 }
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
@@ -42,6 +44,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   countInEnabled = true, onToggleCountIn,
   onToggleLoop,
   loopPauseSeconds, onLoopPauseSecondsChange,
+  trackLoopRepetitions, onToggleTrackLoopRepetitions,
   isAnnotating = false,
   onToggleAnnotate,
 }) => {
@@ -173,6 +176,8 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
               onToggleLoop={onToggleLoop}
               loopPauseSeconds={loopPauseSeconds}
               onLoopPauseSecondsChange={onLoopPauseSecondsChange}
+              trackLoopRepetitions={trackLoopRepetitions}
+              onToggleTrackLoopRepetitions={onToggleTrackLoopRepetitions}
             />
           </div>
         ) : (

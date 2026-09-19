@@ -147,6 +147,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onChange
           <Toggle checked={settings.showRightHandFingering} onChange={v => set('showRightHandFingering', v)} />
         </Row>
       )}
+      {isMusicXml && (
+        <Row label="Track Loop Repetitions" description="Count consecutive successful repetitions while looping">
+          <Toggle checked={settings.trackLoopRepetitions ?? true} onChange={v => set('trackLoopRepetitions', v)} />
+        </Row>
+      )}
       {!isMusicXml && (
         <Row label="Two-Page Landscape" description="Side-by-side pages in landscape">
           <Toggle checked={settings.twoPageLandscape} onChange={v => set('twoPageLandscape', v)} />

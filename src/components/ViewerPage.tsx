@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Loader2, AlertTriangle, ArrowLeft, Repeat, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, AlertTriangle, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ScoreFile, Bookmark } from '../services/storageService';
 import { isMusicXmlFile } from '../services/storageService';
 import { useLibraryStorage } from '../hooks/useLibraryStorage';
@@ -8,6 +8,7 @@ import { pdfService, type PDFDocumentProxy } from '../services/pdfService';
 import { readMusicXmlText } from '../services/musicXmlService';
 import { audioPlaybackService, type PlaybackState, type LoopRange } from '../services/audioPlaybackService';
 import ViewerToolbar from './ViewerToolbar';
+import { PlaybackWidget } from './PlaybackWidget';
 import PdfViewer from './PdfViewer';
 import MusicXmlViewer from './MusicXmlViewer';
 import DisplayControls from './DisplayControls';
@@ -101,12 +102,6 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const isCurrentLoopBookmarked = Boolean(currentLoopBookmark);
 
-  const loopDisplayName = currentLoopBookmark
-    ? currentLoopBookmark.name
-    : activeLoopRange?.startMeasure && activeLoopRange?.endMeasure
-      ? `m. ${activeLoopRange.startMeasure}–${activeLoopRange.endMeasure}`
-      : 'Loop';
-
   // Annotation state and storage
   const annotationState = useAnnotationState(file.id);
   const {
@@ -162,10 +157,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
 
   const bookmarksCount = (file.bookmarks || []).length;
   const isAnyPanelOpen = isBookmarksOpen || isDisplayOpen || isSettingsOpen || isAnnotating;
-  const showFloatingLoopPill = Boolean(
+  const showFloatingPlaybackWidget = Boolean(
     appSettings.autoHideControls &&
     !toolbarVisible &&
     !isAnyPanelOpen &&
+    isMusicXml &&
     isLoopActive
   );
 
@@ -433,7 +429,13 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
   const handleHotZoneEnter = useCallback(() => {
     if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     setToolbarVisible(true);
-  }, []);
+    // When playing or looping with auto-hide enabled, automatically hide after 2.5s
+    if (appSettings.autoHideControls && (audioPlaybackService.isPlaying() || playbackState.loopPauseActive)) {
+      if (!isDisplayOpen && !isSettingsOpen && !isBookmarksOpen) {
+        hideTimerRef.current = window.setTimeout(() => setToolbarVisible(false), 2500);
+      }
+    }
+  }, [appSettings.autoHideControls, playbackState.loopPauseActive, isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
 
   const handleHotZoneLeave = useCallback(() => {
     if (!appSettings.autoHideControls) return;
@@ -449,6 +451,17 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       setToolbarVisible(true);
     }
   }, [isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
+
+  // Automatically hide toolbar shortly after playback starts when auto-hide is enabled
+  useEffect(() => {
+    if (!appSettings.autoHideControls) return;
+    if (playbackState.isPlaying || playbackState.loopPauseActive) {
+      if (!isDisplayOpen && !isSettingsOpen && !isBookmarksOpen) {
+        if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = window.setTimeout(() => setToolbarVisible(false), 1500);
+      }
+    }
+  }, [playbackState.isPlaying, playbackState.loopPauseActive, appSettings.autoHideControls, isDisplayOpen, isSettingsOpen, isBookmarksOpen]);
 
   // Playback Control Handlers
   const handleTogglePlay = useCallback(() => {
@@ -684,6 +697,11 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     }
 
     if (target.closest('.sidebar-control-panel') || target.closest('.md-top-bar') || target.closest('.side-rail-panel') || target.closest('button') || target.closest('input')) return;
+
+    // In autoHideControls mode, tapping on score dismisses visible toolbar
+    if (appSettings.autoHideControls && toolbarVisible) {
+      setToolbarVisible(false);
+    }
   };
 
   const [hoverSide, setHoverSide] = useState<'left' | 'right' | null>(null);
@@ -788,6 +806,9 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     setScrollToLoopTrigger(Date.now());
 
     if (autoPlay) {
+      if (appSettings.autoHideControls) {
+        setIsBookmarksOpen(false);
+      }
       audioPlaybackService.play(bm.bpm || playbackState.bpm).catch(err => {
         console.error('Audio playback failed:', err);
       });
@@ -864,6 +885,13 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
     });
   };
 
+  const handleToggleTrackLoopRepetitions = (enabled: boolean) => {
+    handleSettingsChangeLocal({
+      ...appSettings,
+      trackLoopRepetitions: enabled,
+    });
+  };
+
 
   if (loading && !pdfDoc && !xmlContent) {
     return (
@@ -906,7 +934,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
       <div
         className="absolute top-0 left-0 right-0 z-50"
         style={{
-          height: appSettings.autoHideControls ? '20vh' : 'auto',
+          height: appSettings.autoHideControls ? (toolbarVisible ? 64 : 16) : 'auto',
           pointerEvents: appSettings.autoHideControls ? 'auto' : 'none',
         }}
         onMouseEnter={handleHotZoneEnter}
@@ -943,6 +971,8 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
             onToggleCountIn={handleToggleCountIn}
             loopPauseSeconds={loopPauseSeconds}
             onLoopPauseSecondsChange={handleLoopPauseSecondsChange}
+            trackLoopRepetitions={appSettings.trackLoopRepetitions ?? true}
+            onToggleTrackLoopRepetitions={handleToggleTrackLoopRepetitions}
             onToggleLoop={isMusicXml ? handleToggleLoop : undefined}
             isAnnotating={isAnnotating}
             onToggleAnnotate={handleToggleAnnotate}
@@ -1085,46 +1115,24 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           </button>
         )}
 
-        {/* Floating loop indicator pill with countdown timer when auto-hide is on and menu is hidden */}
-        {showFloatingLoopPill && (
-          <button
-            onClick={() => {
-              setIsBookmarksOpen(true);
-              setIsDisplayOpen(false);
-              setIsSettingsOpen(false);
-            }}
-            className={`absolute top-2.5 z-30 flex items-center gap-1.5 py-1 px-3 rounded-full transition-all hover:scale-105 select-none active:scale-95 ${playbackState.loopPauseActive ? 'animate-pulse' : ''
-              }`}
-            style={{
-              right: isCurrentPageBookmarked ? 100 : 16,
-              background: playbackState.loopPauseActive
-                ? 'rgba(245, 158, 11, 0.28)'
-                : 'rgba(234, 88, 12, 0.22)',
-              border: playbackState.loopPauseActive
-                ? '1px solid rgba(245, 158, 11, 0.6)'
-                : '1px solid rgba(234, 88, 12, 0.5)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
-              color: playbackState.loopPauseActive ? '#fcd34d' : '#fb923c',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
-            }}
-            title={
-              playbackState.loopPauseActive
-                ? `Next loop in ${playbackState.loopPauseRemaining ?? 0}s — click to view bookmarks`
-                : playbackState.loopPauseSeconds
-                  ? `Loop "${loopDisplayName}" is active (${playbackState.loopPauseSeconds}s pause between loops) — click to view bookmarks`
-                  : `Loop "${loopDisplayName}" is active — click to view bookmarks`
-            }
-          >
-            {playbackState.loopPauseActive ? (
-              <span className="font-mono font-bold text-xs tabular-nums text-amber-900 dark:text-amber-200 bg-amber-500/30 px-1.5 py-0.5 rounded-full border border-amber-500/40">
-                {playbackState.loopPauseRemaining ?? 0}s
-              </span>
-            ) : (
-              <Repeat className="w-3.5 h-3.5 text-orange-400" />
-            )}
-            <span className="text-[11px] font-bold tracking-wide">{loopDisplayName}</span>
-          </button>
+        {/* Floating PlaybackWidget when auto-hide is on and controls are hidden in loop mode */}
+        {showFloatingPlaybackWidget && (
+          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-30 shadow-lg animate-fade">
+            <PlaybackWidget
+              playbackState={playbackState}
+              onTogglePlay={handleTogglePlay}
+              onRewind={handleRewind}
+              onBpmChange={handleBpmChange}
+              onVolumeChange={handleVolumeChange}
+              countInEnabled={countInEnabled}
+              onToggleCountIn={handleToggleCountIn}
+              onToggleLoop={handleToggleLoop}
+              loopPauseSeconds={loopPauseSeconds}
+              onLoopPauseSecondsChange={handleLoopPauseSecondsChange}
+              trackLoopRepetitions={appSettings.trackLoopRepetitions ?? true}
+              onToggleTrackLoopRepetitions={handleToggleTrackLoopRepetitions}
+            />
+          </div>
         )}
         <div className="w-full h-full">
           {isMusicXml && xmlContent ? (
@@ -1231,6 +1239,7 @@ export const ViewerPage: React.FC<ViewerPageProps> = ({
           onClose={() => setIsBookmarksOpen(false)}
           playbackState={playbackState}
           isMusicXml={isMusicXml}
+          trackLoopRepetitions={appSettings.trackLoopRepetitions ?? true}
         />
       </div>
 

@@ -16,6 +16,7 @@ interface BookmarksPanelProps {
   onClose: () => void;
   playbackState?: PlaybackState;
   isMusicXml?: boolean;
+  trackLoopRepetitions?: boolean;
 }
 
 export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
@@ -31,7 +32,9 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
   onClose,
   playbackState,
   isMusicXml = false,
+  trackLoopRepetitions = true,
 }) => {
+  const hasRepetitions = Boolean(trackLoopRepetitions && playbackState?.loopRepetitions && playbackState.loopRepetitions > 0);
   const [activeTab, setActiveTab] = useState<'all' | 'loops' | 'pages'>('all');
   const [newPageBookmarkName, setNewPageBookmarkName] = useState('');
   const [newLoopBookmarkName, setNewLoopBookmarkName] = useState('');
@@ -292,16 +295,33 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
       {/* Active Loop Card */}
       {isLoopActive && activeLoopRange && onAddLoopBookmark && (
         <div style={{
-          background: 'linear-gradient(135deg, rgba(234, 88, 12, 0.15), rgba(249, 115, 22, 0.05))',
+          background: hasRepetitions
+            ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.05))'
+            : 'linear-gradient(135deg, rgba(234, 88, 12, 0.15), rgba(249, 115, 22, 0.05))',
           borderRadius: 12,
           padding: '12px 14px',
           marginBottom: 16,
-          border: '1px solid rgba(234, 88, 12, 0.35)',
+          border: hasRepetitions
+            ? '1px solid rgba(16, 185, 129, 0.35)'
+            : '1px solid rgba(234, 88, 12, 0.35)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Repeat className="w-3.5 h-3.5 text-orange-400" />
-              <p style={{ fontSize: 11, fontWeight: 700, color: '#fb923c', textTransform: 'uppercase', letterSpacing: '0.06em', margin: 0 }}>
+              {hasRepetitions ? (
+                <span className="font-mono font-bold text-xs tabular-nums text-emerald-800 dark:text-emerald-200 bg-emerald-500/25 dark:bg-emerald-500/30 px-1.5 py-0.5 rounded-full border border-emerald-500/40 min-w-[18px] text-center">
+                  {playbackState?.loopRepetitions}
+                </span>
+              ) : (
+                <Repeat className="w-3.5 h-3.5 text-orange-400" />
+              )}
+              <p style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: hasRepetitions ? '#34d399' : '#fb923c',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                margin: 0
+              }}>
                 Bookmark Loop
               </p>
             </div>
@@ -887,13 +907,24 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
                       width: 22,
                       height: 22,
                       borderRadius: 6,
-                      background: 'var(--md-loop-bg)',
+                      background: (isLoopMatching && hasRepetitions)
+                        ? 'rgba(16, 185, 129, 0.2)'
+                        : 'var(--md-loop-bg)',
+                      border: (isLoopMatching && hasRepetitions)
+                        ? '1px solid rgba(16, 185, 129, 0.4)'
+                        : undefined,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexShrink: 0
                     }}>
-                      <Repeat className="w-3.5 h-3.5" style={{ color: 'var(--md-loop-text)' }} />
+                      {isLoopMatching && hasRepetitions ? (
+                        <span className="font-mono font-bold text-xs tabular-nums text-emerald-600 dark:text-emerald-400">
+                          {playbackState?.loopRepetitions}
+                        </span>
+                      ) : (
+                        <Repeat className="w-3.5 h-3.5" style={{ color: 'var(--md-loop-text)' }} />
+                      )}
                     </div>
                   ) : (
                     <div style={{

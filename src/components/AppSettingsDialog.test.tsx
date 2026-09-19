@@ -13,6 +13,7 @@ function createSettings(): AppSettings {
         customSliders: { sepia: 35, brightness: 85, contrast: 125, warmth: 20, invert: true, highContrast: true, backgroundColor: '#fffabc', inkDarkness: 45 },
         fitMode: 'height', scrollMode: 'single', tapZoneWidth: 20,
         autoHideControls: true, twoPageLandscape: true, keepScreenAwake: true, showRightHandFingering: true,
+        trackLoopRepetitions: true,
     };
 }
 
@@ -63,6 +64,7 @@ describe('AppSettingsDialog controlled preferences', () => {
         ['Auto-hide controls', 'autoHideControls'],
         ['Keep screen awake', 'keepScreenAwake'],
         ['Right-hand fingering', 'showRightHandFingering'],
+        ['Track loop repetitions', 'trackLoopRepetitions'],
     ] as const)('controls %s without losing filter settings and can toggle it back', (label, key) => {
         const { props, rerender } = mount();
         const toggle = screen.getByRole('checkbox', { name: label }) as HTMLInputElement;

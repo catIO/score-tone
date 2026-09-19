@@ -284,6 +284,7 @@ export const AppSettingsDialog: React.FC<AppSettingsDialogProps> = ({
                                 <PreferenceToggle label="Auto-hide controls" description="Keep controls out of the way while viewing a score." checked={settings.autoHideControls} onChange={autoHideControls => updateSettings({ autoHideControls })} />
                                 <PreferenceToggle label="Keep screen awake" description="Applies while viewing a score on supported devices; does not keep the screen awake in Settings." checked={settings.keepScreenAwake} onChange={keepScreenAwake => updateSettings({ keepScreenAwake })} />
                                 <PreferenceToggle label="Right-hand fingering" description="Show guitar fingering (p, i, m, a) in MusicXML scores." checked={settings.showRightHandFingering} onChange={showRightHandFingering => updateSettings({ showRightHandFingering })} />
+                                <PreferenceToggle label="Track loop repetitions" description="Count and display consecutive repetitions while looping a section." checked={settings.trackLoopRepetitions ?? true} onChange={trackLoopRepetitions => updateSettings({ trackLoopRepetitions })} />
                             </div>
                             <div>
                                 <label htmlFor={`${id}-tap-width`} className="flex justify-between gap-3 text-sm font-medium">

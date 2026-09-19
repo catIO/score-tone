@@ -402,4 +402,71 @@ describe('BookmarksPanel', () => {
       })
     );
   });
+
+  it('renders repetition count in active loop card and matching loop item when loopRepetitions > 0', () => {
+    const activePlaybackWithReps: PlaybackState = {
+      ...mockPlaybackState,
+      loopEnabled: true,
+      loopRepetitions: 4,
+      loopRange: {
+        startBeat: 32,
+        endBeat: 40,
+        startMeasure: 9,
+        endMeasure: 10,
+      },
+    };
+
+    render(
+      <StrictMode>
+        <BookmarksPanel
+          file={mockFile}
+          bookmarks={[mockLoopBookmark]}
+          currentPage={1}
+          onPageChange={vi.fn()}
+          onAddBookmark={vi.fn()}
+          onDeleteBookmark={vi.fn()}
+          onClose={vi.fn()}
+          playbackState={activePlaybackWithReps}
+          isMusicXml={true}
+        />
+      </StrictMode>
+    );
+
+    // Both the active loop card at the top and the matching row should display repetition count "4"
+    const repCountBadges = screen.getAllByText('4');
+    expect(repCountBadges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('hides repetition count in active loop card and matching loop item when trackLoopRepetitions is false', () => {
+    const activePlaybackWithReps: PlaybackState = {
+      ...mockPlaybackState,
+      loopEnabled: true,
+      loopRepetitions: 4,
+      loopRange: {
+        startBeat: 32,
+        endBeat: 40,
+        startMeasure: 9,
+        endMeasure: 10,
+      },
+    };
+
+    render(
+      <StrictMode>
+        <BookmarksPanel
+          file={mockFile}
+          bookmarks={[mockLoopBookmark]}
+          currentPage={1}
+          onPageChange={vi.fn()}
+          onAddBookmark={vi.fn()}
+          onDeleteBookmark={vi.fn()}
+          onClose={vi.fn()}
+          playbackState={activePlaybackWithReps}
+          isMusicXml={true}
+          trackLoopRepetitions={false}
+        />
+      </StrictMode>
+    );
+
+    expect(screen.queryByText('4')).toBeNull();
+  });
 });

@@ -14,6 +14,8 @@ interface PlaybackWidgetProps {
   onToggleLoop?: () => void;
   loopPauseSeconds?: number;
   onLoopPauseSecondsChange?: (seconds: number) => void;
+  trackLoopRepetitions?: boolean;
+  onToggleTrackLoopRepetitions?: (enabled: boolean) => void;
 }
 
 export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
@@ -27,6 +29,8 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
   onToggleLoop,
   loopPauseSeconds,
   onLoopPauseSecondsChange,
+  trackLoopRepetitions = true,
+  onToggleTrackLoopRepetitions,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -130,10 +134,21 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
         )}
       </button>
 
-      {/* Loop Mode Toggle Button */}
+      {/* Separate Success Counter Badge (same size as loop button, appears before countdown/loop button) */}
+      {trackLoopRepetitions && playbackState.loopRepetitions && playbackState.loopRepetitions > 0 ? (
+        <div
+          className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center font-mono font-bold text-xs tabular-nums bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/50 shadow-sm select-none"
+          title={`${playbackState.loopRepetitions} repetition${playbackState.loopRepetitions === 1 ? '' : 's'} in a row`}
+          aria-label={`${playbackState.loopRepetitions} repetition${playbackState.loopRepetitions === 1 ? '' : 's'} in a row`}
+        >
+          {playbackState.loopRepetitions}
+        </div>
+      ) : null}
+
+      {/* Loop Mode Toggle Button (Countdown in cycle icon like before) */}
       <button
         onClick={onToggleLoop}
-        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all focus:outline-none ${
+        className={`w-8 h-8 rounded-lg shrink-0 flex items-center justify-center transition-all focus:outline-none ${
           playbackState.loopPauseActive
             ? 'bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/50 shadow-sm animate-pulse'
             : isLoopActive
@@ -150,7 +165,11 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
             ? `Loop Mode: ON (${playbackState.loopRange ? `m.${playbackState.loopRange.startMeasure}–${playbackState.loopRange.endMeasure}` : 'Active'}) — Click to toggle (L)`
             : 'Enable Loop Mode (L)'
         }
-        aria-label="Toggle Loop Mode"
+        aria-label={
+          playbackState.loopPauseActive
+            ? `Resting between loops: ${playbackState.loopPauseRemaining ?? 0}s`
+            : 'Toggle Loop Mode'
+        }
       >
         {playbackState.loopPauseActive ? (
           <span className="font-mono font-bold text-xs tabular-nums text-amber-800 dark:text-amber-300">
@@ -320,6 +339,21 @@ export const PlaybackWidget: React.FC<PlaybackWidgetProps> = ({
               checked={countInEnabled}
               onChange={(e) => onToggleCountIn(e.target.checked)}
               className="w-4 h-4 rounded cursor-pointer accent-orange-600 dark:accent-orange-500"
+            />
+          </div>
+
+          {/* Loop Repetitions Toggle */}
+          <div className="pt-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--md-outline-variant)' }}>
+            <label htmlFor="trackLoopRepetitionsToggle" className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: 'var(--md-on-surface)' }}>
+              <Repeat className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Track Loop Repetitions</span>
+            </label>
+            <input
+              id="trackLoopRepetitionsToggle"
+              type="checkbox"
+              checked={trackLoopRepetitions}
+              onChange={(e) => onToggleTrackLoopRepetitions?.(e.target.checked)}
+              className="w-4 h-4 rounded cursor-pointer accent-emerald-600 dark:accent-emerald-500"
             />
           </div>
 

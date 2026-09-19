@@ -39,6 +39,7 @@ export interface PlaybackState {
   loopPauseActive?: boolean;
   loopPauseRemaining?: number;
   loopPauseSeconds?: number;
+  loopRepetitions?: number;
 }
 
 type StateListener = (state: PlaybackState) => void;
@@ -82,6 +83,7 @@ class AudioPlaybackService {
     } catch { /* ignore */ }
     return 0;
   })();
+  private loopRepetitions: number = 0;
 
   private stateListeners: Set<StateListener> = new Set();
   private noteListeners: Set<NoteListener> = new Set();
@@ -140,7 +142,17 @@ class AudioPlaybackService {
       loopPauseActive: this.isLoopPausing,
       loopPauseRemaining: this.loopPauseRemaining,
       loopPauseSeconds: this.loopPauseSeconds,
+      loopRepetitions: this.loopRepetitions,
     };
+  }
+
+  public getLoopRepetitions(): number {
+    return this.loopRepetitions;
+  }
+
+  public resetLoopRepetitions(): void {
+    this.loopRepetitions = 0;
+    this.notifyState();
   }
 
   public getCurrentBeat(): number {
@@ -356,6 +368,7 @@ class AudioPlaybackService {
       startNotePageIndex: noteMeta?.pageIndex,
     };
     this.loopEnabled = false;
+    this.loopRepetitions = 0;
     this.pausedTimeInBeats = startBeat;
     this.isCurrentlyPaused = true;
     this.notifyState();
@@ -384,6 +397,7 @@ class AudioPlaybackService {
       ...noteMeta,
     };
     this.loopEnabled = true;
+    this.loopRepetitions = 0;
 
     const current = this.getCurrentBeat();
     if (current < startBeat || current >= endBeat) {
@@ -395,6 +409,7 @@ class AudioPlaybackService {
 
   public toggleLoop(enabled?: boolean): void {
     this.loopEnabled = enabled !== undefined ? enabled : !this.loopEnabled;
+    this.loopRepetitions = 0;
     if (this.loopEnabled) {
       if (!this.loopRange) {
         this.loopRange = { startBeat: 0, endBeat: this.totalBeats, startMeasure: 1, endMeasure: undefined };
@@ -411,12 +426,14 @@ class AudioPlaybackService {
   public clearLoop(): void {
     this.loopRange = null;
     this.loopEnabled = false;
+    this.loopRepetitions = 0;
     this.notifyState();
   }
 
   public applyLoopRange(range: LoopRange, bpm?: number): void {
     this.loopRange = { ...range };
     this.loopEnabled = true;
+    this.loopRepetitions = 0;
     if (bpm && bpm >= 20 && bpm <= 300) {
       this.activeBpm = bpm;
     }
@@ -664,6 +681,8 @@ class AudioPlaybackService {
     this.isCurrentlyPlaying = false;
     this.isCurrentlyPaused = false;
     this.pausedTimeInBeats = this.loopRange.startBeat;
+    // Loop completed: increment repetition success counter immediately
+    this.loopRepetitions++;
 
     if (this.loopPauseSeconds > 0) {
       this.isLoopPausing = true;
@@ -691,6 +710,7 @@ class AudioPlaybackService {
       }, 1000);
     } else {
       // Immediately trigger loop playback with whole-measure count-in
+      this.notifyState(false);
       this.play(this.activeBpm).catch(err => {
         console.warn('Error looping playback:', err);
       });
@@ -711,12 +731,14 @@ class AudioPlaybackService {
   public stop(): void {
     this.isCurrentlyPlaying = false;
     this.isCurrentlyPaused = false;
+    this.loopRepetitions = 0;
     this.pausedTimeInBeats = this.loopRange ? this.loopRange.startBeat : 0;
     this.stopInternal(true);
     this.notifyState();
   }
 
   public rewind(): void {
+    this.loopRepetitions = 0;
     if (this.loopRange) {
       this.seek(this.loopRange.startBeat);
     } else {
@@ -730,6 +752,7 @@ class AudioPlaybackService {
     if (wasPlaying) {
       this.pause();
     }
+    this.loopRepetitions = 0;
     this.pausedTimeInBeats = clamped;
     this.isCurrentlyPaused = clamped > 0;
     this.notifyState();

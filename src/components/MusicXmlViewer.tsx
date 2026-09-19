@@ -190,6 +190,13 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     }
   }, [scrollToLoopTrigger, scrollToInPoint]);
 
+  // Scroll to loop IN point when loop countdown begins
+  useEffect(() => {
+    if (playbackState.loopPauseActive) {
+      scrollToInPoint();
+    }
+  }, [playbackState.loopPauseActive, scrollToInPoint]);
+
 
   // Listen to playback state & synchronize cues from single source of truth
   useEffect(() => {
@@ -421,7 +428,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
         return;
       }
 
-      if (!isPlaying && !isPaused && !playbackState.loopRange && playbackState.currentBeat === 0) {
+      if (!isPlaying && !isPaused && !playbackState.loopPauseActive && !playbackState.loopRange && playbackState.currentBeat === 0) {
         svgs.forEach(s => {
           const group = s.querySelector('.scoretone-playback-cursor') as HTMLElement | null;
           if (group) group.style.display = 'none';
@@ -459,7 +466,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
       const gMeasure = getGraphicMeasure(currentMeasureIndex + 1);
       if (gMeasure && svgs[gMeasure.pageIndex]) {
         const playbackPage = gMeasure.pageIndex + 1;
-        if (isPlaying && onPageChange && playbackPage !== currentPage) {
+        if ((isPlaying || playbackState.loopPauseActive) && onPageChange && playbackPage !== currentPage) {
           lastScrolledPageRef.current = playbackPage;
           onPageChange(playbackPage);
         }
@@ -494,7 +501,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
 
         // Auto-scroll check on measure transitions or when playing
         const scrollContainer = scrollContainerRef.current;
-        if (scrollContainer && isPlaying && lastCheckedMeasure !== currentMeasureIndex) {
+        if (scrollContainer && (isPlaying || playbackState.loopPauseActive) && lastCheckedMeasure !== currentMeasureIndex) {
           lastCheckedMeasure = currentMeasureIndex;
           const pt = activeSvg.createSVGPoint();
           pt.x = cursorX;
@@ -532,7 +539,7 @@ export const MusicXmlViewer: React.FC<MusicXmlViewerProps> = memo(({
     return () => {
       if (animId) cancelAnimationFrame(animId);
     };
-  }, [playbackState.isPlaying, playbackState.isPaused, playbackState.currentBeat, getGraphicMeasure]);
+  }, [playbackState.isPlaying, playbackState.isPaused, playbackState.loopPauseActive, playbackState.currentBeat, getGraphicMeasure]);
 
 
   // Mount effect
